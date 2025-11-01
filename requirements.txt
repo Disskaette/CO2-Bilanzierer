@@ -1,0 +1,15 @@
+# ABC-CO₂-Bilanzierer - Dependencies
+# Python 3.9+
+
+# GUI Framework
+customtkinter==5.2.1
+
+# Diagramme
+matplotlib==3.8.2
+
+# Datenverarbeitung (für CSV und Berechnungen)
+numpy==1.26.2
+
+# Optional: PDF-Export (für zukünftige Implementierung)
+# reportlab==4.0.7
+# pillow==10.1.0
