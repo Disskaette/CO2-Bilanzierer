@@ -113,7 +113,17 @@ class MaterialPickerDialog(ctk.CTkToplevel):
             variable=self.favorites_var,
             command=self._perform_search
         )
-        self.favorites_cb.grid(row=0, column=4, padx=20, pady=5)
+        self.favorites_cb.grid(row=0, column=4, padx=10, pady=5)
+        
+        # EN 15804+A2 Checkbox
+        self.en15804_var = ctk.BooleanVar(value=True)  # Standardmäßig aktiviert
+        self.en15804_cb = ctk.CTkCheckBox(
+            filter_frame,
+            text="Nur EN 15804+A2",
+            variable=self.en15804_var,
+            command=self._perform_search
+        )
+        self.en15804_cb.grid(row=0, column=5, padx=10, pady=5)
         
         filter_frame.columnconfigure(1, weight=1)
         
@@ -212,13 +222,15 @@ class MaterialPickerDialog(ctk.CTkToplevel):
         query = self.search_entry.get()
         dataset_type = self.type_combo.get()
         favorites_only = self.favorites_var.get()
+        en15804_a2_only = self.en15804_var.get()
         
         # Suche durchführen
         try:
             results = self.orchestrator.search_materials(
                 query=query,
                 dataset_type=dataset_type if dataset_type != "alle" else None,
-                favorites_only=favorites_only
+                favorites_only=favorites_only,
+                en15804_a2_only=en15804_a2_only
             )
             
             self.search_results = results

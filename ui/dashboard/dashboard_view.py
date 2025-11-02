@@ -46,11 +46,10 @@ class DashboardView(ctk.CTkFrame):
     def _build_ui(self) -> None:
         """Erstellt UI"""
         
-        # Header
+        # Header mit Projektname
         header_frame = ctk.CTkFrame(self)
-        header_frame.pack(fill="x", padx=10, pady=10)
+        header_frame.pack(fill="x", padx=10, pady=(10, 5))
         
-        # Projektname
         project = self.orchestrator.get_current_project()
         project_name = project.name if project else "Kein Projekt"
         
@@ -60,19 +59,16 @@ class DashboardView(ctk.CTkFrame):
             height=40
         )
         self.project_entry.insert(0, project_name)
-        self.project_entry.pack(side="left", fill="x", expand=True, padx=5)
+        self.project_entry.pack(fill="x", padx=5, pady=5)
         self.project_entry.bind("<FocusOut>", self._on_project_name_changed)
+        self.project_entry.bind("<Return>", self._on_project_name_changed)
+        self.project_entry.bind("<KeyRelease>", self._on_project_name_changed)
         
-        # Chart-Container
-        chart_frame = ctk.CTkFrame(self)
-        chart_frame.pack(fill="both", expand=True, padx=10, pady=10)
-        
-        self._create_chart(chart_frame)
-        
-        # Sichtbarkeits-Checkboxen
+        # Unterer Bereich: Sichtbarkeits-Checkboxen
         vis_frame = ctk.CTkFrame(self)
-        vis_frame.pack(fill="x", padx=10, pady=10)
+        vis_frame.pack(side="bottom", fill="x", padx=10, pady=10)
         
+        # Varianten-Label
         vis_label = ctk.CTkLabel(
             vis_frame,
             text="Angezeigte Varianten:",
@@ -82,6 +78,12 @@ class DashboardView(ctk.CTkFrame):
         
         # Dynamische Checkboxen für vorhandene Varianten
         self._create_visibility_checkboxes(vis_frame)
+        
+        # Chart-Container (NACH Checkboxen erstellen, damit visibility_vars gesetzt sind)
+        chart_frame = ctk.CTkFrame(self)
+        chart_frame.pack(fill="both", expand=True, padx=10, pady=5)
+        
+        self._create_chart(chart_frame)
     
     def _create_visibility_checkboxes(self, parent: ctk.CTkFrame) -> None:
         """Erstellt Checkboxen dynamisch für vorhandene Varianten"""
@@ -94,8 +96,14 @@ class DashboardView(ctk.CTkFrame):
         # Neue Checkboxen für vorhandene Varianten erstellen
         project = self.orchestrator.get_current_project()
         if project:
+            # Sicherstellen, dass visible_variants genug Einträge hat
+            while len(project.visible_variants) < len(project.variants):
+                project.visible_variants.append(True)
+            
             for i, variant in enumerate(project.variants):
-                var = ctk.BooleanVar(value=variant.visible)
+                # Wert aus project.visible_variants holen, nicht aus variant.visible
+                is_visible = project.visible_variants[i] if i < len(project.visible_variants) else True
+                var = ctk.BooleanVar(value=is_visible)
                 self.visibility_vars.append(var)
                 
                 cb = ctk.CTkCheckBox(
@@ -159,11 +167,11 @@ class DashboardView(ctk.CTkFrame):
             if i < len(self.visibility_vars) and self.visibility_vars[i].get():
                 variant_names.append(variant.name)
                 
-                # Materialwerte sammeln (nach Systemgrenze)
+                # Materialwerte sammeln (nach Systemgrenze) - in Tonnen umrechnen!
                 values = []
                 for row in variant.rows:
                     val = self._get_value_for_boundary(row, project.system_boundary)
-                    values.append(val)
+                    values.append(val / 1000.0)  # kg → t
                 
                 variant_data.append(values)
         
@@ -202,7 +210,7 @@ class DashboardView(ctk.CTkFrame):
         # Achsenbeschriftung
         ax.set_xticks(x_pos)
         ax.set_xticklabels(variant_names)
-        ax.set_ylabel("kg CO₂-Äq.")
+        ax.set_ylabel("t CO₂-Äq.")  # Tonnen statt kg
         ax.set_title(f"Variantenvergleich - {project.system_boundary}")
         ax.grid(axis='y', alpha=0.3)
         
@@ -220,13 +228,27 @@ class DashboardView(ctk.CTkFrame):
             ax.spines['right'].set_visible(False)
     
     def _get_value_for_boundary(self, row, boundary: str) -> float:
-        """Gibt Wert für Systemgrenze zurück"""
+        """Gibt Wert für Systemgrenze zurück (Standard oder bio-korrigiert)"""
+        # Standard-Deklaration (EN 15804+A2)
         if boundary == "A1-A3":
             return row.result_a
-        elif boundary == "A1-A3+C3+C4":
+        elif boundary == "A1-A3 + C3 + C4":
             return row.result_ac
-        elif boundary == "A1-A3+C3+C4+D":
+        elif boundary == "A1-A3 + C3 + C4 + D":
             return row.result_acd if row.result_acd is not None else row.result_ac
+        # Bio-korrigierte Varianten
+        elif boundary == "A1-A3 (bio)":
+            return row.result_a_bio if row.result_a_bio is not None else row.result_a
+        elif boundary == "A1-A3 + C3 + C4 (bio)":
+            return row.result_ac_bio if row.result_ac_bio is not None else row.result_ac
+        elif boundary == "A1-A3 + C3 + C4 + D (bio)":
+            if row.result_acd_bio is not None:
+                return row.result_acd_bio
+            elif row.result_acd is not None:
+                return row.result_acd
+            else:
+                return row.result_ac_bio if row.result_ac_bio is not None else row.result_ac
+        # Fallback
         return row.result_a
     
     def refresh(self) -> None:
@@ -238,16 +260,17 @@ class DashboardView(ctk.CTkFrame):
         except:
             return
         
-        # Checkboxen aktualisieren (erstes Kind-Widget)
+        children = self.winfo_children()
+        
+        # Checkboxen aktualisieren (letztes Kind-Widget: vis_frame mit side=bottom)
         try:
-            children = self.winfo_children()
-            if len(children) > 0:
-                vis_frame = children[0]
+            if len(children) > 1:
+                vis_frame = children[-1]  # Letztes Element (side=bottom)
                 self._create_visibility_checkboxes(vis_frame)
         except:
             pass
         
-        # Chart neu zeichnen
+        # Chart neu zeichnen (vorletztes Kind-Widget: chart_frame)
         try:
             if self.canvas:
                 self.canvas.get_tk_widget().destroy()
@@ -256,10 +279,8 @@ class DashboardView(ctk.CTkFrame):
             pass
         
         try:
-            # Finde Chart-Frame (zweites Kind-Widget)
-            children = self.winfo_children()
             if len(children) > 1:
-                chart_frame = children[1]
+                chart_frame = children[-2]  # Vorletztes Element
                 self._create_chart(chart_frame)
         except Exception as e:
             self.logger.error(f"Fehler beim Aktualisieren des Dashboards: {e}")
@@ -272,14 +293,19 @@ class DashboardView(ctk.CTkFrame):
         """Projektname wurde geändert"""
         project = self.orchestrator.get_current_project()
         if project:
-            new_name = self.project_entry.get()
-            project.name = new_name
-            self.orchestrator.notify_change()
-            self.logger.info(f"Projektname geändert: {new_name}")
+            new_name = self.project_entry.get().strip()
+            if new_name and new_name != project.name:
+                project.name = new_name
+                self.orchestrator.notify_change()
+                self.logger.info(f"Projektname geändert: {new_name}")
+                
+                # Trigger Event für ProjectTree und MainWindow
+                self.orchestrator.state.trigger('project_renamed', new_name)
     
     def _on_visibility_changed(self) -> None:
         """Varianten-Sichtbarkeit wurde geändert"""
         for i, var in enumerate(self.visibility_vars):
             self.orchestrator.set_variant_visibility(i, var.get())
         
-        self.refresh()
+        # Dashboard wird über visibility_changed Event neu geladen
+        # (kein self.refresh() mehr nötig)

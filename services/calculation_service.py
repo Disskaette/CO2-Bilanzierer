@@ -23,8 +23,9 @@ class CalculationService:
         self,
         material: Material,
         quantity: float,
-        system_boundary: str = "A1-A3"
-    ) -> Tuple[float, float, Optional[float]]:
+        system_boundary: str = "A1-A3",
+        use_biogenic: bool = False
+    ) -> Tuple[float, float, Optional[float], Optional[float], Optional[float], Optional[float]]:
         """
         Berechnet GWP (Global Warming Potential) für ein Material
         
@@ -32,14 +33,19 @@ class CalculationService:
             material: Material-Objekt mit GWP-Werten
             quantity: Menge in der Einheit des Materials
             system_boundary: "A1-A3", "A1-A3+C3+C4", "A1-A3+C3+C4+D"
+            use_biogenic: True = mit biogener Speicherung
         
         Returns:
-            (gwp_a, gwp_ac, gwp_acd)
-            - gwp_a: Menge × GWP_A1-A3
-            - gwp_ac: Menge × (GWP_A1-A3 + GWP_C3 + GWP_C4)
-            - gwp_acd: gwp_ac + Menge × GWP_D (oder None)
+            (gwp_a, gwp_ac, gwp_acd, gwp_a_bio, gwp_ac_bio, gwp_acd_bio)
+            - gwp_a: Menge × GWP_A1-A3 (Standard)
+            - gwp_ac: Menge × (GWP_A1-A3 + GWP_C3 + GWP_C4) (Standard)
+            - gwp_acd: gwp_ac + Menge × GWP_D (Standard)
+            - gwp_a_bio: gwp_a + biogenic_carbon (bio-korrigiert)
+            - gwp_ac_bio: gwp_ac + biogenic_carbon (bio-korrigiert)
+            - gwp_acd_bio: gwp_acd + biogenic_carbon (bio-korrigiert)
         """
         
+        # Standard-Berechnung (EN 15804+A2)
         # A1-A3 (Herstellung)
         gwp_a = quantity * material.gwp_a1a3
         
@@ -55,12 +61,25 @@ class CalculationService:
         if material.gwp_d is not None:
             gwp_acd = gwp_ac + (quantity * material.gwp_d)
         
+        # Bio-korrigierte Berechnung (mit biogener Speicherung)
+        gwp_a_bio = None
+        gwp_ac_bio = None
+        gwp_acd_bio = None
+        
+        if use_biogenic and material.biogenic_carbon is not None:
+            bio_storage = quantity * material.biogenic_carbon
+            gwp_a_bio = gwp_a + bio_storage
+            gwp_ac_bio = gwp_ac + bio_storage
+            if gwp_acd is not None:
+                gwp_acd_bio = gwp_acd + bio_storage
+        
         self.logger.debug(
             f"Berechnung: {material.name}, Menge={quantity} {material.unit}, "
-            f"A={gwp_a:.2f}, AC={gwp_ac:.2f}, ACD={gwp_acd}"
+            f"A={gwp_a:.2f}, AC={gwp_ac:.2f}, ACD={gwp_acd}, "
+            f"A_bio={gwp_a_bio}, AC_bio={gwp_ac_bio}, ACD_bio={gwp_acd_bio}"
         )
         
-        return gwp_a, gwp_ac, gwp_acd
+        return gwp_a, gwp_ac, gwp_acd, gwp_a_bio, gwp_ac_bio, gwp_acd_bio
     
     def update_material_row(
         self,
@@ -98,12 +117,20 @@ class CalculationService:
         row.c_modules_missing = not material.has_c_modules()
         row.d_module_missing = not material.has_d_module()
         
-        # Berechnung durchführen
-        gwp_a, gwp_ac, gwp_acd = self.calc_gwp(material, row.quantity)
+        # Berechnung durchführen (sowohl Standard als auch bio-korrigiert)
+        gwp_a, gwp_ac, gwp_acd, gwp_a_bio, gwp_ac_bio, gwp_acd_bio = self.calc_gwp(
+            material, row.quantity, use_biogenic=True
+        )
         
         row.result_a = gwp_a
         row.result_ac = gwp_ac
         row.result_acd = gwp_acd
+        
+        # Bio-korrigierte Werte speichern (neue Felder in MaterialRow benötigt)
+        if hasattr(row, 'result_a_bio'):
+            row.result_a_bio = gwp_a_bio
+            row.result_ac_bio = gwp_ac_bio
+            row.result_acd_bio = gwp_acd_bio
         
         return row
     
@@ -131,12 +158,20 @@ class CalculationService:
             dataset_type=row.material_dataset_type
         )
         
-        # Neu berechnen
-        gwp_a, gwp_ac, gwp_acd = self.calc_gwp(material, row.quantity)
+        # Neu berechnen (beide Varianten)
+        gwp_a, gwp_ac, gwp_acd, gwp_a_bio, gwp_ac_bio, gwp_acd_bio = self.calc_gwp(
+            material, row.quantity, use_biogenic=True
+        )
         
         row.result_a = gwp_a
         row.result_ac = gwp_ac
         row.result_acd = gwp_acd
+        
+        # Bio-korrigierte Werte
+        if hasattr(row, 'result_a_bio'):
+            row.result_a_bio = gwp_a_bio
+            row.result_ac_bio = gwp_ac_bio
+            row.result_acd_bio = gwp_acd_bio
         
         return row
     

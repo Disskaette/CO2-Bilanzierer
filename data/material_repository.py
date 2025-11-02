@@ -105,6 +105,7 @@ class MaterialRepository:
                                 'name': name,
                                 'type': row.get('Typ', 'generisch'),
                                 'source': row.get('Declaration owner', ''),
+                                'conformity': row.get('Konformitaet', '').strip(),
                                 'unit': row.get('Bezugseinheit', 'kg'),
                                 'modules': {}  # Modul -> GWP-Wert
                             }
@@ -117,6 +118,15 @@ class MaterialRepository:
                         if modul and gwp_str:
                             gwp_value = self._parse_float(gwp_str, decimal)
                             materials_dict[uuid]['modules'][modul] = gwp_value
+                        
+                        # Biogener Kohlenstoff extrahieren (nur einmal pro Material)
+                        if 'biogenic_carbon' not in materials_dict[uuid]:
+                            bio_str = row.get('Biogenic carbon content (A1-A3)', 
+                                            row.get('biogenic_carbon', None))
+                            if bio_str:
+                                materials_dict[uuid]['biogenic_carbon'] = self._parse_float(bio_str, decimal)
+                            else:
+                                materials_dict[uuid]['biogenic_carbon'] = None
 
                     except Exception as e:
                         self.logger.warning(f"Fehler in Zeile {idx + 2}: {e}")
@@ -195,10 +205,11 @@ class MaterialRepository:
         - C3: Abfallbehandlung
         - C4: Deponie
         - D: Gutschriften
+        - Biogenic carbon: biogene CO2-Speicherung
 
         Args:
             uuid: Material-UUID
-            data: Dict mit name, type, source, unit, modules
+            data: Dict mit name, type, source, unit, modules, biogenic_carbon
 
         Returns:
             Material-Objekt oder None
@@ -211,6 +222,9 @@ class MaterialRepository:
         gwp_c4 = modules.get('C4', 0.0)
         gwp_d = modules.get('D', None)
 
+        # Biogener Kohlenstoff
+        biogenic_carbon = data.get('biogenic_carbon', None)
+
         # Typ von Englisch (CSV) nach Deutsch (UI) übersetzen
         csv_type = data['type']
         ui_type = self.TYPE_MAPPING_REVERSE.get(csv_type, csv_type)
@@ -221,13 +235,15 @@ class MaterialRepository:
             name=data['name'],
             dataset_type=ui_type,  # Deutscher Name für UI
             source=data['source'],
+            conformity=data.get('conformity', ''),
             unit=data['unit'],
             gwp_a1a3=gwp_a1a3,
             gwp_c3=gwp_c3,
             gwp_c4=gwp_c4,
             gwp_d=gwp_d,
+            biogenic_carbon=biogenic_carbon,
             # Original speichern
-            raw_data={'modules': modules, 'csv_type': csv_type}
+            raw_data={'modules': modules, 'csv_type': csv_type, 'biogenic_carbon': biogenic_carbon, 'conformity': data.get('conformity', '')}
         )
 
     def _parse_row(
@@ -335,7 +351,8 @@ class MaterialRepository:
         self,
         query: str = "",
         dataset_type: Optional[str] = None,
-        favorites_only: bool = False
+        favorites_only: bool = False,
+        en15804_a2_only: bool = False
     ) -> List[Material]:
         """
         Sucht Materialien
@@ -344,6 +361,7 @@ class MaterialRepository:
             query: Suchbegriff (Volltext in Name, ID, Quelle)
             dataset_type: Filter nach Typ (None = alle)
             favorites_only: Nur Favoriten
+            en15804_a2_only: Nur EN 15804+A2 Materialien
 
         Returns:
             Liste passender Materialien
@@ -361,6 +379,10 @@ class MaterialRepository:
         # Filter: Datensatztyp
         if dataset_type and dataset_type != "alle":
             results = [m for m in results if m.dataset_type == dataset_type]
+
+        # Filter: EN 15804+A2
+        if en15804_a2_only:
+            results = [m for m in results if m.is_en15804_a2()]
 
         # Filter: Volltext
         if query:

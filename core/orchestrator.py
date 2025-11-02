@@ -220,7 +220,8 @@ class AppOrchestrator:
         self,
         query: str = "",
         dataset_type: Optional[str] = None,
-        favorites_only: bool = False
+        favorites_only: bool = False,
+        en15804_a2_only: bool = False
     ) -> List[Material]:
         """
         Sucht Materialien in der CSV
@@ -229,11 +230,12 @@ class AppOrchestrator:
             query: Suchbegriff
             dataset_type: Filter nach Typ
             favorites_only: Nur Favoriten
+            en15804_a2_only: Nur EN 15804+A2 Materialien
         
         Returns:
             Liste passender Materialien
         """
-        return self.material_repo.search(query, dataset_type, favorites_only)
+        return self.material_repo.search(query, dataset_type, favorites_only, en15804_a2_only)
     
     def get_csv_metadata(self) -> Dict[str, Any]:
         """Gibt CSV-Metadaten zurück"""

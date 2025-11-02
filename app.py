@@ -29,7 +29,7 @@ class Application:
     Verwaltet Welcome-Window → Main-Window Übergang
     """
 
-    VERSION = "1.0.0"
+    VERSION = "0.1"
 
     def __init__(self):
         # Orchestrator initialisieren
@@ -40,12 +40,12 @@ class Application:
         setup_logging(log_path)
 
         self.logger = logging.getLogger(__name__)
-        self.logger.info(f"ABC-CO₂-Bilanzierer v{self.VERSION} gestartet")
+        self.logger.info(f"CO₂-Bilanzierer v{self.VERSION} gestartet")
 
         # Temporäres Root-Window für WelcomeWindow
         self.temp_root = ctk.CTk()
         self.temp_root.withdraw()  # Komplett verstecken
-        
+
         # Main-Window (wird später erstellt und ist dann das echte Root)
         self.main_window = None
 
@@ -91,7 +91,8 @@ class Application:
                 self.logger.warning("Fehler beim Laden der Standard-CSV")
         else:
             self.logger.info(f"Keine Standard-CSV gefunden unter: {csv_path}")
-            self.logger.info("Sie können später über 'CSV laden' eine Datenbank laden")
+            self.logger.info(
+                "Sie können später über 'CSV laden' eine Datenbank laden")
 
     def _show_welcome(self) -> None:
         """Zeigt Welcome-Window"""
@@ -109,7 +110,7 @@ class Application:
         """Zeigt Main-Window"""
         # Temp-Root schließen
         self.temp_root.destroy()
-        
+
         # Main-Window als neues Root erstellen
         if not self.main_window:
             self.main_window = MainWindow(self.orchestrator)

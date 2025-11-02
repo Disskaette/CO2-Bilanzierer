@@ -60,11 +60,14 @@ class MainWindow(ctk.CTk):
         self.orchestrator.state.register_callback('project_loaded', self._on_project_loaded)
         self.orchestrator.state.register_callback('csv_loaded', self._on_csv_loaded)
         self.orchestrator.state.register_callback('row_updated', self._on_row_updated)
+        self.orchestrator.state.register_callback('row_deleted', self._on_row_deleted)
         self.orchestrator.state.register_callback('rebuild_charts', self._on_rebuild_charts)
         self.orchestrator.state.register_callback('autosave_failed', self._on_autosave_failed)
         self.orchestrator.state.register_callback('variant_renamed', self._on_variant_renamed)
         self.orchestrator.state.register_callback('variant_deleted', self._on_variant_deleted)
         self.orchestrator.state.register_callback('variant_added', self._on_variant_added)
+        self.orchestrator.state.register_callback('project_renamed', self._on_project_renamed)
+        self.orchestrator.state.register_callback('visibility_changed', self._on_visibility_changed)
     
     def _build_ui(self) -> None:
         """Erstellt UI-Struktur"""
@@ -101,12 +104,21 @@ class MainWindow(ctk.CTk):
         
         project = self.orchestrator.get_current_project()
         current_boundary = project.system_boundary if project else "A1-A3"
-        boundaries = ["A1-A3", "A1-A3+C3+C4", "A1-A3+C3+C4+D"]
+        
+        # Erweiterte Systemgrenzen mit biogener Speicherung
+        boundaries = [
+            "A1-A3",
+            "A1-A3 + C3 + C4",
+            "A1-A3 + C3 + C4 + D",
+            "A1-A3 (bio)",
+            "A1-A3 + C3 + C4 (bio)",
+            "A1-A3 + C3 + C4 + D (bio)"
+        ]
         
         self.boundary_combo = ctk.CTkComboBox(
             boundary_bar,
             values=boundaries,
-            width=200,
+            width=250,
             command=self._on_boundary_changed
         )
         self.boundary_combo.set(current_boundary)
@@ -299,7 +311,7 @@ class MainWindow(ctk.CTk):
         # Vereinfacht: Buttons in Dialog
         dialog = ctk.CTkToplevel(self)
         dialog.title("Datei")
-        dialog.geometry("300x200")
+        dialog.geometry("300x280")
         dialog.transient(self)
         
         ctk.CTkButton(
@@ -468,12 +480,13 @@ class MainWindow(ctk.CTk):
         self.logger.info(f"Systemgrenze geändert: {value}")
         
         # Alle Ansichten aktualisieren
-        if self.dashboard_view:
-            self.dashboard_view.refresh()
-        
-        for view in self.variant_views:
-            if view:
-                view.refresh_chart()
+        if self.current_tab == 0:
+            # Dashboard komplett neu laden
+            self._show_dashboard()
+        else:
+            # Aktuelle Variante neu laden
+            variant_index = self.current_tab - 1
+            self._show_variant(variant_index)
     
     def _get_csv_info(self) -> str:
         """Gibt CSV-Info-String zurück"""
@@ -528,6 +541,16 @@ class MainWindow(ctk.CTk):
         if self.dashboard_view:
             self.dashboard_view.refresh()
     
+    def _on_row_deleted(self, variant_index: int, row_id: str) -> None:
+        """Callback: Zeile wurde gelöscht"""
+        # Aktuelle Varianten-View komplett neu laden
+        if self.current_tab == variant_index + 1:
+            self._show_variant(variant_index)
+        
+        # Dashboard aktualisieren
+        if self.dashboard_view:
+            self.dashboard_view.refresh()
+    
     def _on_rebuild_charts(self) -> None:
         """Callback: Diagramme neu zeichnen"""
         if self.current_tab == 0 and self.dashboard_view:
@@ -559,13 +582,19 @@ class MainWindow(ctk.CTk):
         # Tabs neu bauen
         self._rebuild_tabs()
         
-        # Zurück zum Dashboard wenn aktuelle Variante gelöscht wurde
-        if self.current_tab > remaining_count:
+        # Intelligentes Tab-Handling
+        if remaining_count == 0:
+            # Keine Varianten mehr: Zum Dashboard
             self._switch_tab(0)
-        
-        # Dashboard aktualisieren
-        if self.dashboard_view:
-            self.dashboard_view.refresh()
+        elif self.current_tab == 0:
+            # Bereits im Dashboard: Dashboard neu laden
+            self._show_dashboard()
+        elif self.current_tab > remaining_count:
+            # Aktueller Tab existiert nicht mehr: Zum Dashboard
+            self._switch_tab(0)
+        else:
+            # Tab existiert noch: View neu laden für aktuellen Tab
+            self._show_variant(self.current_tab - 1)
     
     def _on_variant_added(self, new_count: int) -> None:
         """Callback: Variante wurde hinzugefügt"""
@@ -578,3 +607,15 @@ class MainWindow(ctk.CTk):
         
         # Zum neuen Tab wechseln
         self._switch_tab(new_count)
+    
+    def _on_project_renamed(self, new_name: str) -> None:
+        """Callback: Projektname wurde geändert"""
+        # ProjectTree aktualisieren
+        if self.project_tree:
+            self.project_tree.refresh()
+    
+    def _on_visibility_changed(self) -> None:
+        """Callback: Varianten-Sichtbarkeit wurde geändert"""
+        # Dashboard komplett neu laden, wenn wir im Dashboard sind
+        if self.current_tab == 0:
+            self._show_dashboard()

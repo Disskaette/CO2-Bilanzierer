@@ -34,7 +34,8 @@ class Project:
     # UI-Zustand
     last_open_tabs: List[int] = field(default_factory=lambda: [0])  # Tab-Indices
     active_tab: int = 0
-    system_boundary: str = "A1-A3"  # "A1-A3", "A1-A3+C3+C4", "A1-A3+C3+C4+D"
+    system_boundary: str = "A1-A3"  # Systemgrenze: siehe BOUNDARY_OPTIONS
+    use_biogenic: bool = False  # True = mit biogener Speicherung, False = EN 15804+A2
     visible_variants: List[bool] = field(default_factory=lambda: [True] * 5)
     
     # Dateibaum-Struktur (optional, für spätere Erweiterung)
@@ -55,6 +56,7 @@ class Project:
             'last_open_tabs': self.last_open_tabs,
             'active_tab': self.active_tab,
             'system_boundary': self.system_boundary,
+            'use_biogenic': self.use_biogenic,
             'visible_variants': self.visible_variants,
             'file_tree': self.file_tree
         }

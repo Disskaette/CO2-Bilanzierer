@@ -2,7 +2,7 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "ABC-CO₂-Bilanzierer starten",
+            "name": "CO₂-Bilanzierer starten",
             "type": "debugpy",
             "request": "launch",
             "program": "${workspaceFolder}/app.py",
@@ -14,7 +14,7 @@
             }
         },
         {
-            "name": "ABC-CO₂-Bilanzierer (Debug-Modus)",
+            "name": "CO₂-Bilanzierer (Debug-Modus)",
             "type": "debugpy",
             "request": "launch",
             "program": "${workspaceFolder}/app.py",

@@ -39,6 +39,11 @@ class MaterialRow:
     result_ac: float = 0.0     # quantity × (gwp_a1a3 + gwp_c3 + gwp_c4)
     result_acd: Optional[float] = None  # result_ac + quantity × gwp_d
     
+    # Bio-korrigierte Werte (mit biogener Speicherung)
+    result_a_bio: Optional[float] = None
+    result_ac_bio: Optional[float] = None
+    result_acd_bio: Optional[float] = None
+    
     # Flags
     c_modules_missing: bool = False
     d_module_missing: bool = False
@@ -61,6 +66,9 @@ class MaterialRow:
             'result_a': self.result_a,
             'result_ac': self.result_ac,
             'result_acd': self.result_acd,
+            'result_a_bio': self.result_a_bio,
+            'result_ac_bio': self.result_ac_bio,
+            'result_acd_bio': self.result_acd_bio,
             'c_modules_missing': self.c_modules_missing,
             'd_module_missing': self.d_module_missing
         }
@@ -90,6 +98,11 @@ class Variant:
     sum_ac: float = 0.0
     sum_acd: Optional[float] = None
     
+    # Bio-korrigierte Summen
+    sum_a_bio: Optional[float] = None
+    sum_ac_bio: Optional[float] = None
+    sum_acd_bio: Optional[float] = None
+    
     # UI-Einstellungen
     visible: bool = True  # Sichtbarkeit im Dashboard
     column_widths: Dict[str, int] = field(default_factory=dict)
@@ -105,6 +118,9 @@ class Variant:
             'sum_a': self.sum_a,
             'sum_ac': self.sum_ac,
             'sum_acd': self.sum_acd,
+            'sum_a_bio': self.sum_a_bio,
+            'sum_ac_bio': self.sum_ac_bio,
+            'sum_acd_bio': self.sum_acd_bio,
             'visible': self.visible,
             'column_widths': self.column_widths
         }
@@ -151,7 +167,8 @@ class Variant:
             row.position = i
     
     def calculate_sums(self) -> None:
-        """Berechnet Gesamtsummen"""
+        """Berechnet Gesamtsummen (Standard und bio-korrigiert)"""
+        # Standard-Summen
         self.sum_a = sum(row.result_a for row in self.rows)
         self.sum_ac = sum(row.result_ac for row in self.rows)
         
@@ -160,3 +177,19 @@ class Variant:
             self.sum_acd = sum(row.result_acd or 0.0 for row in self.rows)
         else:
             self.sum_acd = None
+        
+        # Bio-korrigierte Summen (nur wenn mindestens eine Zeile bio-Werte hat)
+        bio_rows = [r for r in self.rows if r.result_a_bio is not None]
+        if bio_rows:
+            self.sum_a_bio = sum(row.result_a_bio or row.result_a for row in self.rows)
+            self.sum_ac_bio = sum(row.result_ac_bio or row.result_ac for row in self.rows)
+            
+            # sum_acd_bio nur wenn alle Zeilen D haben
+            if all(row.result_acd is not None for row in self.rows if row.material_id):
+                self.sum_acd_bio = sum(row.result_acd_bio or row.result_acd or 0.0 for row in self.rows)
+            else:
+                self.sum_acd_bio = None
+        else:
+            self.sum_a_bio = None
+            self.sum_ac_bio = None
+            self.sum_acd_bio = None

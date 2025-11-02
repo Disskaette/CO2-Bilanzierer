@@ -121,15 +121,31 @@ class VariantView(ctk.CTkFrame):
             if row.material_name:
                 labels.append(row.material_name[:25])  # Kürzere Labels
 
+                # Standard-Deklaration
                 if boundary == "A1-A3":
-                    values.append(row.result_a)
-                elif boundary == "A1-A3+C3+C4":
-                    values.append(row.result_ac)
-                elif boundary == "A1-A3+C3+C4+D":
+                    values.append(row.result_a / 1000.0)  # kg → t
+                elif boundary == "A1-A3 + C3 + C4":
+                    values.append(row.result_ac / 1000.0)  # kg → t
+                elif boundary == "A1-A3 + C3 + C4 + D":
                     val = row.result_acd if row.result_acd is not None else row.result_ac
-                    values.append(val)
+                    values.append(val / 1000.0)  # kg → t
+                # Bio-korrigierte Varianten
+                elif boundary == "A1-A3 (bio)":
+                    val = row.result_a_bio if row.result_a_bio is not None else row.result_a
+                    values.append(val / 1000.0)  # kg → t
+                elif boundary == "A1-A3 + C3 + C4 (bio)":
+                    val = row.result_ac_bio if row.result_ac_bio is not None else row.result_ac
+                    values.append(val / 1000.0)  # kg → t
+                elif boundary == "A1-A3 + C3 + C4 + D (bio)":
+                    if row.result_acd_bio is not None:
+                        val = row.result_acd_bio
+                    elif row.result_acd is not None:
+                        val = row.result_acd
+                    else:
+                        val = row.result_ac_bio if row.result_ac_bio is not None else row.result_ac
+                    values.append(val / 1000.0)  # kg → t
                 else:
-                    values.append(row.result_a)
+                    values.append(row.result_a / 1000.0)  # kg → t
 
         if not values:
             text_color = 'lightgray' if is_dark else 'gray'
@@ -154,7 +170,7 @@ class VariantView(ctk.CTkFrame):
                 )
                 bottom += value
 
-            ax.set_ylabel("kg CO₂-Äq.", fontsize=10)
+            ax.set_ylabel("t CO₂-Äq.", fontsize=10)  # Tonnen statt kg
             ax.set_title(f"{variant.name} - {boundary}", fontsize=11, pad=10)
             ax.set_xticks([])
             ax.set_xlim(-0.5, 0.5)
@@ -322,24 +338,44 @@ class VariantView(ctk.CTkFrame):
         down_btn.pack(side="left", padx=2)
 
     def _create_sums(self, parent: ctk.CTkFrame, variant) -> None:
-        """Erstellt Summenzeilen"""
+        """Erstellt Summenzeilen (Standard und bio-korrigiert)"""
 
         sum_frame = ctk.CTkFrame(parent)
         sum_frame.pack(side="right", padx=10, pady=5)
 
+        # Standard-Deklaration (EN 15804+A2)
         sum_a_label = ctk.CTkLabel(
             sum_frame,
-            text=f"Σ A1-A3: {variant.sum_a:.2f} kg CO₂-Äq.",
+            text=f"Σ A1-A3: {variant.sum_a / 1000.0:.2f} t CO₂-Äq.",
             font=ctk.CTkFont(size=12, weight="bold")
         )
         sum_a_label.pack(side="left", padx=10)
 
         sum_ac_label = ctk.CTkLabel(
             sum_frame,
-            text=f"Σ A1-A3+C3+C4: {variant.sum_ac:.2f} kg CO₂-Äq.",
+            text=f"Σ A1-A3+C3+C4: {variant.sum_ac / 1000.0:.2f} t CO₂-Äq.",
             font=ctk.CTkFont(size=12, weight="bold")
         )
         sum_ac_label.pack(side="left", padx=10)
+        
+        # Bio-korrigierte Werte (falls vorhanden)
+        if variant.sum_a_bio is not None:
+            sum_a_bio_label = ctk.CTkLabel(
+                sum_frame,
+                text=f"Σ A1-A3 (bio): {variant.sum_a_bio / 1000.0:.2f} t CO₂-Äq.",
+                font=ctk.CTkFont(size=12, weight="bold"),
+                text_color="lightgreen"
+            )
+            sum_a_bio_label.pack(side="left", padx=10)
+        
+        if variant.sum_ac_bio is not None:
+            sum_ac_bio_label = ctk.CTkLabel(
+                sum_frame,
+                text=f"Σ A1-A3+C3+C4 (bio): {variant.sum_ac_bio / 1000.0:.2f} t CO₂-Äq.",
+                font=ctk.CTkFont(size=12, weight="bold"),
+                text_color="lightgreen"
+            )
+            sum_ac_bio_label.pack(side="left", padx=10)
 
     def refresh_chart(self) -> None:
         """Aktualisiert nur das Diagramm"""
@@ -481,8 +517,8 @@ class VariantView(ctk.CTkFrame):
 
                 x, y, width, height = bbox
 
-                # Entry-Widget erstellen
-                entry = ctk.CTkEntry(self.tree, width=width)
+                # Entry-Widget erstellen (width/height im Constructor!)
+                entry = ctk.CTkEntry(self.tree, width=width, height=height)
                 entry.insert(0, current_value)
                 entry.select_range(0, 'end')
                 entry.focus()
@@ -509,8 +545,8 @@ class VariantView(ctk.CTkFrame):
                 entry.bind("<FocusOut>", save_quantity)
                 entry.bind("<Escape>", cancel_edit)
 
-                # Entry positionieren
-                entry.place(x=x, y=y, width=width, height=height)
+                # Entry positionieren (OHNE width/height)
+                entry.place(x=x, y=y)
                 break
 
     def _open_material_picker(self, row_id: str) -> None:
