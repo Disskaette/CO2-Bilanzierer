@@ -1,4 +1,4 @@
-ABC-CO₂-BILANZIERER - VOLLSTÄNDIGE PROJEKTSTRUKTUR
+CO₂-BILANZIERER - VOLLSTÄNDIGE PROJEKTSTRUKTUR
 ==================================================
 
 ROOT-VERZEICHNIS
@@ -67,7 +67,12 @@ UTILS - HILFSFUNKTIONEN
 LAUFZEITVERZEICHNIS (wird automatisch erstellt)
 ================================================
 ~/.abc_co2_bilanzierer/             # Benutzerverzeichnis
-├── config.json                     # Konfiguration (zuletzt geöffnet, etc.)
+├── config.json                     # Konfiguration + MATERIAL-FAVORITEN
+│                                   # - last_project_id
+│                                   # - global_csv_path
+│                                   # - favorites (IDs)
+│                                   # - favorite_names
+│                                   # - theme, window_size
 ├── projects/
 │   └── <project-id>.json          # Gespeicherte Projekte
 ├── snapshots/
@@ -98,16 +103,25 @@ SERVICES (1 Datei)
 
 DATA (1 Datei)
 --------------
-✓ MaterialRepository - CSV-Laden mit Auto-Erkennung, Suche, Favoriten
+✓ MaterialRepository - CSV-Laden mit Auto-Erkennung, Suche
+                     - Favoriten-Persistierung (config.json)
+                     - Custom Materials (eigene EPDs)
+                     - EN 15804+A2 Filter
 
 UI (7 Dateien)
 --------------
 ✓ WelcomeWindow     - Startbildschirm mit zuletzt geöffneten Projekten
-✓ MainWindow        - Hauptfenster mit Tab-Struktur
+✓ MainWindow        - Hauptfenster mit Tab-Struktur + 6 Systemgrenzen
 ✓ ProjectTreeView   - Dateibaum (links)
-✓ DashboardView     - Vergleichsdiagramm (Tab 1)
-✓ VariantView       - Einzelvariante mit Tabelle + Diagramm (Tabs 2-6)
+✓ DashboardView     - Vergleichsdiagramm mit konsistenten Farben
+                      - Vollständige Legende (zentriert)
+                      - Material-Übersichtstabellen (2x2 Grid)
+✓ VariantView       - Einzelvariante mit einheitlichem Diagramm
+                      - Inline-Mengenbearbeitung (Doppelklick)
 ✓ MaterialPickerDialog - Material-Suche mit Filtern
+                         - Favoriten-Stern (★) zum Toggle
+                         - EN 15804+A2 Filter (Standard aktiv)
+                         - Custom Materials Löschung (Rechtsklick)
 
 UTILS (2 Dateien)
 -----------------
@@ -122,19 +136,34 @@ KERNFUNKTIONEN (ALLE IMPLEMENTIERT)
 ------------------------------------
 ✅ Modulare Architektur mit strikter Schichtentrennnung
 ✅ CSV-Auto-Erkennung (Trennzeichen + Dezimalformat)
-✅ Material-Datenbank mit Suche, Filter, Favoriten
+✅ Material-Datenbank mit Suche, Filter, PERSISTENTEN FAVORITEN
 ✅ 5 Bauwerksvarianten parallel bearbeitbar
-✅ 3 Systemgrenzen (A1-A3, A1-A3+C3+C4, A1-A3+C3+C4+D)
-✅ Dashboard mit Variantenvergleich (gestapeltes Balkendiagramm)
-✅ Variantenansichten mit Einzeldiagrammen + Tabellen
-✅ Material-Picker-Dialog mit Live-Suche
+✅ 6 Systemgrenzen (Standard + bio-korrigiert):
+   - A1-A3 / A1-A3 (bio)
+   - A1-A3+C3+C4 / A1-A3+C3+C4 (bio)
+   - A1-A3+C3+C4+D / A1-A3+C3+C4+D (bio)
+✅ Dashboard mit Variantenvergleich:
+   - Gestapeltes Balkendiagramm mit konsistenten Farben
+   - Vollständige Legende (horizontal + vertikal zentriert)
+   - Material-Übersichtstabellen (2x2 Grid, dynamische Höhe)
+   - Vertikales Scrolling
+✅ Variantenansichten:
+   - Einheitliche Diagramme (8x3.5 Zoll, festes Layout)
+   - Inline-Mengenbearbeitung (Doppelklick)
+   - Zeilen verschieben (↑ ↓)
+✅ Material-Picker-Dialog:
+   - Live-Suche mit Favoriten-Markierung (★)
+   - EN 15804+A2 Filter (Standard aktiviert)
+   - Datensatztyp-Filter
+✅ Custom Materials - Eigene EPDs hinzufügen/löschen
+✅ Favoriten-Persistierung in config.json
 ✅ Autosave mit Debounce (800ms)
 ✅ Snapshots (max. 20 pro Projekt, Auto-Restore)
 ✅ Persistenz im Benutzerverzeichnis
-✅ Demo-Projekt beim ersten Start (Massivbau, Holzbau, Hybrid)
-✅ Dark/Light-Mode Toggle
+✅ Demo-Projekt beim ersten Start (Holzbau, Stahlbau, Stahlbetonbau)
+✅ Dark/Light-Mode Toggle mit optimierten Kontrasten
 ✅ Logging in Datei (app.log)
-✅ Vollständige Dokumentation (README, ARCHITEKTUR, SCHNELLSTART)
+✅ Vollständige Dokumentation (README, ARCHITEKTUR, SCHNELLSTART, CSV_FORMAT)
 
 NORMATIVE GRUNDLAGEN
 ---------------------
@@ -217,7 +246,7 @@ Gesamt: 21 Python-Dateien
 - Docs: 3 Markdown-Dateien
 - Config: 2 Dateien (requirements.txt, .gitignore)
 
-Geschätzte Zeilen Code: ~3500 LOC (ohne Kommentare)
+Geschätzte Zeilen Code: ~4000 LOC (ohne Kommentare)
 
 
 QUALITÄTSMERKMALE
@@ -250,7 +279,17 @@ Bildungs- und Forschungszwecke
 
 VERSION
 =======
-1.0.0 (November 2024)
+1.1.0 (November 2024)
+
+NEU IN 1.1.0:
+- ★ Favoriten-Persistierung (dauerhaft gespeichert)
+- 🏭 Custom Materials (eigene EPDs)
+- ✔️ EN 15804+A2 Filter (Standard-aktiviert)
+- 🎨 Konsistente Dashboard-Farben
+- 📊 6 Systemgrenzen (inkl. bio-korrigiert)
+- 📊 Vollständige Legenden (zentriert)
+- 📊 Material-Übersichtstabellen (2x2 Grid)
+- 📊 Einheitliche Diagrammgrößen in allen Tabs
 
 ================================================================================
 PROJEKT VOLLSTÄNDIG IMPLEMENTIERT - BEREIT ZUM TESTEN!

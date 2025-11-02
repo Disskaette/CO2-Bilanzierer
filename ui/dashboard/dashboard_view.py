@@ -10,6 +10,7 @@ import logging
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import matplotlib.pyplot as plt
+from tkinter import ttk
 
 from core.orchestrator import AppOrchestrator
 
@@ -115,13 +116,26 @@ class DashboardView(ctk.CTkFrame):
                 cb.pack(side="left", padx=10)
     
     def _create_chart(self, parent: ctk.CTkFrame) -> None:
-        """Erstellt Matplotlib-Chart"""
+        """Erstellt Matplotlib-Chart mit Tabelle"""
+        
+        # Scrollable Container
+        scrollable_frame = ctk.CTkScrollableFrame(parent)
+        scrollable_frame.pack(fill="both", expand=True)
+        
+        # Container für Chart und Tabelle
+        chart_container = ctk.CTkFrame(scrollable_frame)
+        chart_container.pack(fill="both", expand=True)
+        
+        # Oberer Teil: Diagramm
+        plot_frame = ctk.CTkFrame(chart_container)
+        plot_frame.pack(fill="both", expand=True, pady=(0, 10))
         
         # Figure erstellen mit Theme
         is_dark = ctk.get_appearance_mode() == "Dark"
         fig_color = '#2b2b2b' if is_dark else 'white'
         
-        self.figure = Figure(figsize=(8, 4.5), dpi=100, facecolor=fig_color)
+        # Kleinere Figure für Platz für Legenden
+        self.figure = Figure(figsize=(10, 4), dpi=100, facecolor=fig_color)
         ax = self.figure.add_subplot(111)
         
         if is_dark:
@@ -146,34 +160,52 @@ class DashboardView(ctk.CTkFrame):
             self._plot_comparison(ax, project)
         
         # Canvas erstellen
-        self.canvas = FigureCanvasTkAgg(self.figure, parent)
+        self.canvas = FigureCanvasTkAgg(self.figure, plot_frame)
         self.canvas.draw()
         self.canvas.get_tk_widget().pack(fill="both", expand=True)
+        
+        # Unterer Teil: Material-Tabelle
+        if project and project.variants:
+            self._create_material_table(chart_container, project)
     
     def _plot_comparison(self, ax, project) -> None:
         """
-        Zeichnet Vergleichsdiagramm
+        Zeichnet Vergleichsdiagramm mit konsistenten Farben und Legende
         
         Args:
             ax: Matplotlib Axes
             project: Project-Objekt
         """
         
-        # Varianten sammeln
+        # 1. Alle Materialien über alle Varianten sammeln
+        all_materials = set()
+        for variant in project.variants:
+            for row in variant.rows:
+                if row.material_name:
+                    all_materials.add(row.material_name)
+        
+        # 2. Farben zuweisen (konsistent über alle Varianten)
+        material_colors = {}
+        colors = plt.cm.tab20.colors
+        for idx, material in enumerate(sorted(all_materials)):
+            material_colors[material] = colors[idx % len(colors)]
+        
+        # 3. Varianten sammeln
         variant_names = []
-        variant_data = []  # Liste von Listen (Materialien pro Variante)
+        variant_data = []  # Liste von Dictionaries {material_name: value}
         
         for i, variant in enumerate(project.variants):
             if i < len(self.visibility_vars) and self.visibility_vars[i].get():
                 variant_names.append(variant.name)
                 
-                # Materialwerte sammeln (nach Systemgrenze) - in Tonnen umrechnen!
-                values = []
+                # Materialwerte sammeln (nach Systemgrenze)
+                material_values = {}
                 for row in variant.rows:
-                    val = self._get_value_for_boundary(row, project.system_boundary)
-                    values.append(val / 1000.0)  # kg → t
+                    if row.material_name:
+                        val = self._get_value_for_boundary(row, project.system_boundary)
+                        material_values[row.material_name] = val / 1000.0  # kg → t
                 
-                variant_data.append(values)
+                variant_data.append(material_values)
         
         if not variant_names:
             ax.text(
@@ -186,17 +218,15 @@ class DashboardView(ctk.CTkFrame):
             ax.axis('off')
             return
         
-        # Gestapeltes Balkendiagramm
+        # 4. Gestapeltes Balkendiagramm mit konsistenten Farben
         x_pos = range(len(variant_names))
         
-        # Farbpalette
-        colors = plt.cm.tab20.colors
-        
-        # Für jede Variante
-        for idx, (name, values) in enumerate(zip(variant_names, variant_data)):
+        # Für jede Variante (OHNE Labels, werden manuell hinzugefügt)
+        for idx, (name, material_values) in enumerate(zip(variant_names, variant_data)):
             bottom = 0
-            for mat_idx, value in enumerate(values):
-                color = colors[mat_idx % len(colors)]
+            for material_name in sorted(material_values.keys()):
+                value = material_values[material_name]
+                color = material_colors[material_name]
                 ax.bar(
                     idx,
                     value,
@@ -207,15 +237,44 @@ class DashboardView(ctk.CTkFrame):
                 )
                 bottom += value
         
-        # Achsenbeschriftung
+        # 5. Achsenbeschriftung
         ax.set_xticks(x_pos)
-        ax.set_xticklabels(variant_names)
-        ax.set_ylabel("t CO₂-Äq.")  # Tonnen statt kg
+        ax.set_xticklabels(variant_names, fontsize=10)
+        ax.set_ylabel("t CO₂-Äq.")
         ax.set_title(f"Variantenvergleich - {project.system_boundary}")
         ax.grid(axis='y', alpha=0.3)
         
-        # Theme anpassen
-        if ctk.get_appearance_mode() == "Dark":
+        # 6. Legende MANUELL erstellen für ALLE Materialien
+        if all_materials:
+            from matplotlib.patches import Rectangle
+            
+            # Erstelle Patches für alle Materialien (sortiert)
+            legend_handles = []
+            legend_labels = []
+            for material_name in sorted(all_materials):
+                color = material_colors[material_name]
+                patch = Rectangle((0, 0), 1, 1, fc=color, edgecolor='white')
+                legend_handles.append(patch)
+                legend_labels.append(material_name)
+            
+            # Legende horizontal und vertikal zentriert
+            # Diagramm endet bei right=0.35, Fenster bei 1.0
+            # Mitte: (0.35 + 1.0) / 2 = 0.675 in Figure-Koordinaten
+            ncol = 1 if len(legend_handles) <= 10 else 2
+            legend = ax.legend(
+                legend_handles,
+                legend_labels,
+                loc='center',
+                bbox_to_anchor=(1.92, 0.5),  # 1.92 = (0.675 - 0.35) / 0.27 * 2 offset
+                fontsize=9,
+                framealpha=0.9,
+                ncol=ncol,
+                bbox_transform=ax.transAxes
+            )
+        
+        # 7. Theme anpassen
+        is_dark = ctk.get_appearance_mode() == "Dark"
+        if is_dark:
             ax.set_facecolor('#2b2b2b')
             self.figure.patch.set_facecolor('#2b2b2b')
             ax.tick_params(colors='white')
@@ -226,6 +285,128 @@ class DashboardView(ctk.CTkFrame):
             ax.spines['left'].set_color('white')
             ax.spines['top'].set_visible(False)
             ax.spines['right'].set_visible(False)
+            # Legende anpassen
+            legend = ax.get_legend()
+            if legend:
+                legend.get_frame().set_facecolor('#2b2b2b')
+                legend.get_frame().set_edgecolor('gray')
+                for text in legend.get_texts():
+                    text.set_color('white')
+        else:
+            ax.spines['bottom'].set_color('black')
+            ax.spines['left'].set_color('black')
+            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False)
+        
+        # 8. Festes Layout für vollständige Legende (Diagramm schmäler)
+        self.figure.subplots_adjust(left=0.08, right=0.35, top=0.92, bottom=0.12)
+    
+    def _create_material_table(self, parent: ctk.CTkFrame, project) -> None:
+        """Erstellt Material-Übersichtstabellen im Grid-Layout pro Variante"""
+        
+        # Titel
+        title_label = ctk.CTkLabel(
+            parent,
+            text="Material-Übersicht pro Variante",
+            font=ctk.CTkFont(size=13, weight="bold")
+        )
+        title_label.pack(anchor="w", padx=5, pady=(5, 5))
+        
+        # Grid-Container (2 Spalten)
+        grid_frame = ctk.CTkFrame(parent)
+        grid_frame.pack(fill="x", padx=5, pady=(0, 5))
+        
+        # Nur sichtbare Varianten anzeigen
+        visible_variants = []
+        for i, variant in enumerate(project.variants):
+            if i < len(self.visibility_vars) and self.visibility_vars[i].get():
+                visible_variants.append(variant)
+        
+        # Grid erstellen: 2 Spalten
+        for idx, variant in enumerate(visible_variants):
+            row = idx // 2
+            col = idx % 2
+            
+            # Varianten-Frame
+            variant_frame = ctk.CTkFrame(grid_frame, fg_color=("white", "#2b2b2b"))
+            variant_frame.grid(row=row, column=col, padx=5, pady=5, sticky="nsew")
+            
+            # Grid-Gewichte
+            grid_frame.grid_columnconfigure(col, weight=1)
+            
+            # Varianten-Titel (größere Schrift)
+            var_title = ctk.CTkLabel(
+                variant_frame,
+                text=variant.name,
+                font=ctk.CTkFont(size=13, weight="bold")
+            )
+            var_title.pack(anchor="w", padx=5, pady=(5, 2))
+            
+            # Mini-Treeview - dynamische Höhe basierend auf Materialanzahl
+            columns = ("material", "co2")
+            row_count = len(variant.rows)
+            # Mindestens 3, maximal 10 Zeilen + 1 für Summe
+            dynamic_height = min(max(row_count + 1, 3), 10)
+            tree = ttk.Treeview(
+                variant_frame,
+                columns=columns,
+                show="headings",
+                height=dynamic_height
+            )
+            
+            # Style
+            style = ttk.Style()
+            current_mode = ctk.get_appearance_mode()
+            
+            if current_mode == "Dark":
+                style.theme_use('default')
+                style.configure("Treeview",
+                    background="#2b2b2b",
+                    fieldbackground="#2b2b2b",
+                    foreground="white",
+                    rowheight=20)
+                style.configure("Treeview.Heading",
+                    background="#1f1f1f",
+                    foreground="white",
+                    relief="flat")
+            else:
+                style.theme_use('default')
+                style.configure("Treeview",
+                    background="white",
+                    fieldbackground="white",
+                    foreground="black",
+                    rowheight=20)
+                style.configure("Treeview.Heading",
+                    background="#d0d0d0",
+                    foreground="black",
+                    relief="flat")
+            
+            # Spalten - optimierte Breiten
+            tree.heading("material", text="Material")
+            tree.heading("co2", text="CO₂ [t]")
+            tree.column("material", width=350)  # Breiter für Namen
+            tree.column("co2", width=70)  # Schmäler für Zahlen
+            
+            # Daten für diese Variante
+            variant_total = 0
+            for row in variant.rows:
+                if row.material_name:
+                    val = self._get_value_for_boundary(row, project.system_boundary)
+                    val_tons = val / 1000.0  # kg → t
+                    tree.insert("", "end", values=(
+                        row.material_name,  # Voller Name, kein Kürzen
+                        f"{val_tons:.2f}"
+                    ))
+                    variant_total += val_tons
+            
+            # Summe
+            tree.insert("", "end", values=(
+                "SUMME",
+                f"{variant_total:.2f}"
+            ), tags=("total",))
+            tree.tag_configure("total", background="#4a4a4a" if current_mode == "Dark" else "#e0e0e0")
+            
+            tree.pack(fill="both", expand=True, padx=5, pady=(0, 5))
     
     def _get_value_for_boundary(self, row, boundary: str) -> float:
         """Gibt Wert für Systemgrenze zurück (Standard oder bio-korrigiert)"""

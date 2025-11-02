@@ -45,17 +45,21 @@ Das wars! 🎉
 
 1. **Welcome-Screen** öffnet sich
 2. Automatisch wird ein **Demo-Projekt** angelegt mit:
-   - Variante 1: Massivbau (5 Materialien)
-   - Variante 2: Holzbau (5 Materialien)
-   - Variante 3: Hybrid (5 Materialien)
+   - Variante 1: Holzbau (5 Materialien)
+   - Variante 2: Stahlbau (1 Material)
+   - Variante 3: Stahlbetonbau (3 Materialien)
 3. Klicken Sie auf das Demo-Projekt
 
 ### Dashboard erkunden:
 
-- **Tab 1 (Dashboard)**: Vergleichsdiagramm aller Varianten
-- **Tabs 2-6**: Einzelne Varianten mit Details
-- **Systemgrenze** ändern: Dropdown oben rechts
-- **Varianten ausblenden**: Checkboxen unten
+- **Tab 1 (Dashboard)**:
+  - Vergleichsdiagramm mit **konsistenten Farben** über alle Varianten
+  - **Vollständige Legende** rechts (horizontal + vertikal zentriert)
+  - **Material-Übersichtstabellen** (2x2 Grid) mit CO₂-Summen
+  - Vertikales Scrolling bei vielen Varianten
+- **Tabs 2-6**: Einzelne Varianten mit **einheitlichen Diagrammen** und Legenden
+- **Systemgrenze** ändern: Dropdown oben (6 Optionen inkl. bio-korrigiert)
+- **Varianten ein-/ausblenden**: Checkboxen im Dashboard
 
 ### CSV-Datenbank laden:
 
@@ -81,9 +85,12 @@ id;name;type;unit;gwp_a1a3;gwp_c3;gwp_c4;gwp_d
 2. Klicken Sie **"+ Zeile hinzufügen"**
 3. Im Material-Dialog:
    - Geben Sie Suchbegriff ein (z.B. "Beton")
+   - **EN 15804+A2 Filter** ist standardmäßig aktiv ✓
    - Optional: Filter nach Datensatztyp
+   - Optional: "Nur Favoriten" für gespeicherte Materialien
+   - **Favoriten markieren**: Klick auf ★-Spalte
    - Doppelklick auf Material ODER auswählen + OK
-4. Doppelklick auf **Menge** zum Bearbeiten
+4. **Inline-Bearbeitung**: Doppelklick auf **Menge** in der Tabelle
 5. Fertig - CO₂-Werte werden automatisch berechnet!
 
 ## 💾 Speicherung
@@ -99,13 +106,45 @@ Klicken Sie auf **"Theme"** in der Menüleiste.
 
 ## 📊 Systemgrenzen
 
-Wählen Sie im Dashboard:
+Wählen Sie im Dashboard (6 Optionen):
 
+**Standard-Deklaration:**
 | Systemgrenze | Beschreibung |
-|--------------|--------------|
+|--------------|------------|
 | **A1-A3** | Nur Herstellung (Product Stage) |
 | **A1-A3+C3+C4** | Herstellung + Entsorgung (End of Life) |
 | **A1-A3+C3+C4+D** | + Gutschriften (Benefits & Loads) |
+
+**Bio-korrigierte Deklaration:**
+| Systemgrenze | Beschreibung |
+|--------------|------------|
+| **A1-A3 (bio)** | Mit biogenem Kohlenstoff |
+| **A1-A3+C3+C4 (bio)** | Herstellung + Entsorgung, bio-korrigiert |
+| **A1-A3+C3+C4+D (bio)** | + Gutschriften, bio-korrigiert |
+
+**Hinweis**: Bio-korrigierte Werte berücksichtigen die temporäre CO₂-Speicherung in biogenen Materialien.
+
+## ⭐ Material-Favoriten
+
+**Favoriten werden dauerhaft gespeichert!**
+
+- **Markieren**: Klick auf ★ im Material-Picker
+- **Filter**: "Nur Favoriten"-Checkbox aktivieren
+- **Speicherort**: `~/.abc_co2_bilanzierer/config.json`
+- **Persistierung**: Bleiben nach Neustart erhalten
+- **Auto-Mapping**: Bei CSV-Wechsel werden IDs und Namen gemappt
+
+## 🏭 Custom Materials
+
+**Eigene EPDs hinzufügen:**
+
+1. Im Material-Picker: Rechtsklick → "Eigene EPD hinzufügen"
+2. Formular ausfüllen (Name, GWP-Werte, etc.)
+3. Speichern → Material erscheint in der Liste
+
+**Löschen**: Rechtsklick auf Custom Material → "Löschen"
+
+**Speicherort**: `custom_materials.csv` im gleichen Verzeichnis wie Haupt-CSV
 
 ## ⚠️ Wichtige Hinweise
 
@@ -121,6 +160,7 @@ Wählen Sie im Dashboard:
 ### Performance:
 - Material-Picker zeigt max. 500 Treffer
 - Bei großen CSV-Dateien: Suchbegriff eingrenzen
+- EN 15804+A2 Filter reduziert Treffermenge
 
 ## 🆘 Probleme?
 

@@ -75,15 +75,16 @@ class VariantView(ctk.CTkFrame):
         self.name_entry.bind("<FocusOut>", self._on_name_changed)
         self.name_entry.bind("<Return>", self._on_name_changed)
 
-        # Oberer Bereich: Diagramm
+        # Oberer Bereich: Diagramm (Ausgewogene Höhe)
         chart_frame = ctk.CTkFrame(self, height=350)
         chart_frame.pack(fill="x", padx=10, pady=10)
         chart_frame.pack_propagate(False)
 
         self._create_chart(chart_frame, variant)
 
-        # Mittlerer Bereich: Tabelle
-        table_frame = ctk.CTkFrame(self)
+        # Mittlerer Bereich: Tabelle (Theme-bewusst)
+        # fg_color Format: (Light Mode Farbe, Dark Mode Farbe)
+        table_frame = ctk.CTkFrame(self, fg_color=("white", "#2b2b2b"))
         table_frame.pack(fill="both", expand=True, padx=10, pady=10)
 
         self._create_table(table_frame, variant)
@@ -102,8 +103,8 @@ class VariantView(ctk.CTkFrame):
         is_dark = ctk.get_appearance_mode() == "Dark"
         fig_color = '#2b2b2b' if is_dark else 'white'
 
-        # Kleineres, vertikales Diagramm
-        self.figure = Figure(figsize=(8, 3.5), dpi=80, facecolor=fig_color)
+        # Ausgewogene Diagrammgröße
+        self.figure = Figure(figsize=(8, 3.5), dpi=100, facecolor=fig_color)
         ax = self.figure.add_subplot(111)
 
         if is_dark:
@@ -119,7 +120,7 @@ class VariantView(ctk.CTkFrame):
 
         for row in variant.rows:
             if row.material_name:
-                labels.append(row.material_name[:25])  # Kürzere Labels
+                labels.append(row.material_name)  # Volle Namen für Legende
 
                 # Standard-Deklaration
                 if boundary == "A1-A3":
@@ -166,7 +167,7 @@ class VariantView(ctk.CTkFrame):
                     width=0.6,
                     color=color,
                     edgecolor='white',
-                    label=label
+                    label=label  # Voller Name wird jetzt in Legende angezeigt
                 )
                 bottom += value
 
@@ -175,12 +176,13 @@ class VariantView(ctk.CTkFrame):
             ax.set_xticks([])
             ax.set_xlim(-0.5, 0.5)
 
-            # Legende rechts neben dem Diagramm
-            ax.legend(
+            # Legende rechts neben dem Diagramm - mit voller Breite
+            legend = ax.legend(
                 loc='center left',
                 bbox_to_anchor=(1.02, 0.5),
-                fontsize=12,
-                framealpha=0.9
+                fontsize=10,
+                framealpha=0.9,
+                ncol=1  # Eine Spalte für volle Namen
             )
 
             # Theme-Anpassung
@@ -188,19 +190,28 @@ class VariantView(ctk.CTkFrame):
                 ax.tick_params(colors='white')
                 ax.yaxis.label.set_color('white')
                 ax.title.set_color('white')
+                # Nur X und Y Achsen anzeigen (schwarz/weiß je nach Theme)
                 ax.spines['bottom'].set_color('white')
                 ax.spines['left'].set_color('white')
                 ax.spines['top'].set_visible(False)
                 ax.spines['right'].set_visible(False)
-                legend = ax.get_legend()
                 if legend:
                     legend.get_frame().set_facecolor('#2b2b2b')
                     legend.get_frame().set_edgecolor('gray')
                     for text in legend.get_texts():
                         text.set_color('white')
+            else:
+                # Light Mode: Schwarze Achsen
+                ax.tick_params(colors='black')
+                ax.yaxis.label.set_color('black')
+                ax.title.set_color('black')
+                ax.spines['bottom'].set_color('black')
+                ax.spines['left'].set_color('black')
+                ax.spines['top'].set_visible(False)
+                ax.spines['right'].set_visible(False)
 
-        # Mehr Platz für Legende
-        self.figure.tight_layout(rect=[0, 0, 0.75, 1])
+        # Festes Layout für konsistente Größe - Diagramm schmäler
+        self.figure.subplots_adjust(left=0.1, right=0.35, top=0.92, bottom=0.12)
 
         self.canvas = FigureCanvasTkAgg(self.figure, parent)
         self.canvas.draw()
@@ -209,14 +220,15 @@ class VariantView(ctk.CTkFrame):
     def _create_table(self, parent: ctk.CTkFrame, variant) -> None:
         """Erstellt Tabelle mit Materialzeilen"""
 
-        # Hinweis über Tabelle
+        # Hinweis über Tabelle (Theme-bewusst)
+        current_mode = ctk.get_appearance_mode()
         hint_label = ctk.CTkLabel(
             parent,
             text="Mengen bitte in der Einheit der CSV/EPD eingeben",
-            font=ctk.CTkFont(size=10),
-            text_color="gray"
+            font=ctk.CTkFont(size=11),
+            text_color=("black", "white")  # Schwarz in Light, Weiß in Dark
         )
-        hint_label.pack(anchor="w", padx=5, pady=(0, 5))
+        hint_label.pack(anchor="w", padx=5, pady=(5, 5))
 
         # Treeview (Tabelle)
         columns = (
@@ -229,12 +241,51 @@ class VariantView(ctk.CTkFrame):
             parent,
             columns=columns,
             show="headings",
-            height=10  # Weniger Zeilen
+            height=8  # Kompaktere Tabelle (scrollbar)
         )
 
-        # Kleinere Zeilenhöhe
+        # Style konfigurieren (Theme-bewusst)
         style = ttk.Style()
-        style.configure("Treeview", rowheight=20)
+        
+        # Theme-Farben anpassen
+        if current_mode == "Dark":
+            # Dark Mode: Dunkle Tabelle
+            style.theme_use('default')  # Wichtig: Theme zurücksetzen
+            style.configure("Treeview",
+                background="#2b2b2b",
+                fieldbackground="#2b2b2b",
+                foreground="white",
+                rowheight=20,
+                borderwidth=0)
+            style.configure("Treeview.Heading",
+                background="#1f1f1f",
+                foreground="white",
+                borderwidth=1,
+                relief="flat")
+            style.map('Treeview', 
+                background=[('selected', '#1f6aa5')],
+                foreground=[('selected', 'white')])
+            style.map('Treeview.Heading',
+                background=[('active', '#2b2b2b')])
+        else:
+            # Light Mode: Helle Tabelle
+            style.theme_use('default')
+            style.configure("Treeview",
+                background="white",
+                fieldbackground="white",
+                foreground="black",
+                rowheight=20,
+                borderwidth=0)
+            style.configure("Treeview.Heading",
+                background="#d0d0d0",
+                foreground="black",
+                borderwidth=1,
+                relief="flat")
+            style.map('Treeview', 
+                background=[('selected', '#3b8ed0')],
+                foreground=[('selected', 'white')])
+            style.map('Treeview.Heading',
+                background=[('active', '#e0e0e0')])
 
         # Spaltenüberschriften
         self.tree.heading("pos", text="Pos")
@@ -258,10 +309,24 @@ class VariantView(ctk.CTkFrame):
         self.tree.column("result_a", width=100)
         self.tree.column("result_ac", width=100)
 
-        # Scrollbar
+        # Scrollbar (Theme-bewusst)
         scrollbar = ttk.Scrollbar(
             parent, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscrollcommand=scrollbar.set)
+        
+        # Scrollbar-Style anpassen
+        if current_mode == "Dark":
+            style.configure("Vertical.TScrollbar",
+                background="#2b2b2b",
+                troughcolor="#1f1f1f",
+                bordercolor="#1f1f1f",
+                arrowcolor="white")
+        else:
+            style.configure("Vertical.TScrollbar",
+                background="#e0e0e0",
+                troughcolor="white",
+                bordercolor="#d0d0d0",
+                arrowcolor="black")
 
         self.tree.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
@@ -444,7 +509,10 @@ class VariantView(ctk.CTkFrame):
         if tags:
             row_id = tags[0]
             self.orchestrator.move_row_up(self.variant_index, row_id)
-            self._refresh_view()
+            # Komplette Tabelle neu aufbauen
+            variant = self.orchestrator.get_variant(self.variant_index)
+            if variant:
+                self._populate_table(variant)
 
     def _move_row_down(self) -> None:
         """Verschiebt Zeile nach unten"""
@@ -457,7 +525,10 @@ class VariantView(ctk.CTkFrame):
         if tags:
             row_id = tags[0]
             self.orchestrator.move_row_down(self.variant_index, row_id)
-            self._refresh_view()
+            # Komplette Tabelle neu aufbauen
+            variant = self.orchestrator.get_variant(self.variant_index)
+            if variant:
+                self._populate_table(variant)
 
     def _on_row_double_click(self, event) -> None:
         """Handler für Doppelklick auf Zeile"""

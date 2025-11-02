@@ -15,19 +15,31 @@ Desktop-Anwendung für die Ökobilanzierung von Bauwerken nach ABC-Entwurfstafel
 
 - **Modulare Architektur** mit strikter Trennung (Models, Core, Services, UI)
 - **CSV-Auto-Erkennung** (Trennzeichen und Dezimalformat)
-- **Materialdatenbank-Verwaltung** mit Suche, Filterung und Favoriten
+- **Materialdatenbank-Verwaltung** mit Suche, Filterung und **persistenten Favoriten**
 - **5 Bauwerksvarianten** parallel bearbeitbar
-- **3 Systemgrenzen**:
-  - A1-A3 (Herstellung)
-  - A1-A3 + C3 + C4 (Herstellung + Entsorgung)
-  - A1-A3 + C3 + C4 + D (mit Gutschriften)
-- **Dashboard** mit Variantenvergleich (gestapeltes Balkendiagramm)
-- **Variantenansichten** mit Einzeldiagrammen und Tabellen
-- **Material-Picker-Dialog** mit Live-Suche
+- **6 Systemgrenzen** (Standard + bio-korrigiert):
+  - A1-A3 / A1-A3 (bio)
+  - A1-A3 + C3 + C4 / A1-A3 + C3 + C4 (bio)
+  - A1-A3 + C3 + C4 + D / A1-A3 + C3 + C4 + D (bio)
+- **Dashboard** mit Variantenvergleich:
+  - Gestapeltes Balkendiagramm mit konsistenten Farben
+  - Vollständige Legende (horizontal + vertikal zentriert)
+  - Material-Übersichtstabellen (2x2 Grid, dynamische Höhe)
+  - Vertikales Scrolling für alle Varianten
+- **Variantenansichten** mit:
+  - Kompakte Einzeldiagramme (einheitliche Größe)
+  - Vertikale Balken mit vollständiger Legende rechts
+  - Inline-Mengenbearbeitung (Doppelklick)
+  - Zeilen verschieben (↑ ↓)
+- **Material-Picker-Dialog** mit:
+  - Live-Suche und Favoriten-Markierung (★)
+  - EN 15804+A2 Filter (Standard aktiviert)
+  - Datensatztyp-Filter
+- **Custom Materials** - Eigene EPDs hinzufügen/löschen
 - **Autosave & Snapshots** (max. 20 pro Projekt, Debounce 800ms)
-- **Persistenz** im Benutzerverzeichnis (~/.abc_co2_bilanzierer)
-- **Demo-Projekt** beim ersten Start (3 Varianten: Massivbau, Holzbau, Hybrid)
-- **Dark/Light-Mode** umschaltbar
+- **Persistenz** im Benutzerverzeichnis mit **Favoriten-Speicherung**
+- **Demo-Projekt** beim ersten Start (3 Varianten: Holzbau, Stahlbau, Stahlbetonbau)
+- **Dark/Light-Mode** umschaltbar mit optimierten Kontrasten
 - **Logging** in Datei (logs/app.log)
 
 ### 🚧 TODO (in kommenden Versionen)
@@ -171,7 +183,7 @@ Alle Daten werden im Benutzerverzeichnis gespeichert:
 
 ```
 .abc_co2_bilanzierer/
-├── config.json                 # Konfiguration
+├── config.json                 # Konfiguration (inkl. Favoriten)
 ├── projects/
 │   ├── <project-id>.json      # Projekt-Dateien
 │   └── ...
@@ -183,6 +195,13 @@ Alle Daten werden im Benutzerverzeichnis gespeichert:
 └── logs/
     └── app.log                 # Log-Datei
 ```
+
+**config.json** enthält:
+- Zuletzt geöffnetes Projekt
+- CSV-Pfad (global)
+- **Material-Favoriten** (persistiert über Sitzungen)
+- Theme-Einstellungen
+- Fenstergrößen
 
 ## Entwicklung
 

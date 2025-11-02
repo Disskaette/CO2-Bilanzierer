@@ -41,6 +41,7 @@ class Material:
     # Metadaten
     csv_row_index: int = -1  # Zeilenindex in CSV
     raw_data: Dict[str, Any] = field(default_factory=dict)  # Vollständige CSV-Zeile
+    is_custom: bool = False  # True = eigenes Material, False = ÖKOBAUDAT
     
     def to_dict(self) -> Dict[str, Any]:
         """Serialisierung für JSON-Speicherung"""

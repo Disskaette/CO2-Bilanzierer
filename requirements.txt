@@ -1,15 +1,27 @@
 # ABC-CO₂-Bilanzierer - Dependencies
-# Python 3.9+
+# Version: 1.1.0
+# Python: >= 3.9
+#
+# Neue Features in 1.1.0:
+# - Favoriten-Persistierung (config.json)
+# - Custom Materials (eigene EPDs)
+# - EN 15804+A2 Filter
+# - 6 Systemgrenzen (inkl. bio-korrigiert)
+# - Konsistente Dashboard-Farben & Legenden
+# - Material-Übersichtstabellen (2x2 Grid)
 
 # GUI Framework
 customtkinter==5.2.1
 
-# Diagramme
+# Diagramme & Visualisierung
 matplotlib==3.8.2
 
-# Datenverarbeitung (für CSV und Berechnungen)
+# Datenverarbeitung (CSV-Parsing & numerische Berechnungen)
 numpy==1.26.2
 
 # Optional: PDF-Export (für zukünftige Implementierung)
 # reportlab==4.0.7
 # pillow==10.1.0
+
+# Installation:
+# pip install -r requirements.txt

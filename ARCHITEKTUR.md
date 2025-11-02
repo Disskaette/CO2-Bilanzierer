@@ -70,6 +70,7 @@ Events:
 - Verzeichnis: ~/.abc_co2_bilanzierer/
 - Projects: JSON-Dateien
 - Snapshots: Max. 20 pro Projekt
+- **config.json**: Material-Favoriten, CSV-Pfad, Theme, Fenstergrößen
 - Auto-Restore beim Start
 
 ### Services
@@ -86,8 +87,10 @@ calc_gwp(material, quantity, boundary):
 
 **MaterialRepository** - CSV-Verwaltung
 - Auto-Erkennung: Trennzeichen (`;`, `,`, `\t`) und Dezimalformat
-- Suche: Volltext, Datensatztyp, Favoriten
+- Suche: Volltext, Datensatztyp, Favoriten, EN 15804+A2 Filter
+- **Favoriten-Persistierung**: Speichern/Laden aus config.json
 - Favoriten-Mapping bei CSV-Wechsel
+- **Custom Materials**: Eigene EPDs laden/speichern/löschen
 
 ### UI Layer
 
@@ -101,19 +104,26 @@ calc_gwp(material, quantity, boundary):
 - Menü: CSV laden, Export, Theme-Toggle
 
 **DashboardView** - Vergleichsansicht (Tab 1)
-- Gestapeltes Balkendiagramm (Matplotlib)
-- Systemgrenze-Dropdown
+- Gestapeltes Balkendiagramm mit **konsistenten Farben**
+- **Vollständige Legende** (horizontal + vertikal zentriert)
+- **Material-Übersichtstabellen** (2x2 Grid, dynamische Höhe)
+- Vertikales Scrolling
+- Systemgrenze-Dropdown (6 Optionen)
 - Varianten-Checkboxen
 
 **VariantView** - Einzelvariante (Tabs 2-6)
-- Kleines Diagramm (oben)
-- Material-Tabelle (Treeview)
+- **Einheitliche Diagramme** (8x3.5 Zoll, festes Layout)
+- Vertikale Balken mit Legende rechts
+- Material-Tabelle (Treeview, 8 Zeilen)
+- **Inline-Mengenbearbeitung** (Doppelklick)
 - Buttons: Add/Delete, Move Up/Down
-- Summen (unten)
+- **Summen**: Standard + bio-korrigiert (falls vorhanden)
 
 **MaterialPickerDialog** - Materialauswahl
-- Suchfeld + Filter (Typ, Favoriten)
+- Suchfeld + Filter (Typ, Favoriten, **EN 15804+A2**)
 - Tabelle mit Treffern (max. 500)
+- **Favoriten-Stern** (★) zum Toggle
+- **Custom Materials** mit Rechtsklick-Löschung
 - OK / Abbrechen
 
 ## 3. Datenfluss - Beispiel
@@ -162,7 +172,7 @@ Autosave (nach Debounce):
 **Verzeichnisstruktur:**
 ```
 ~/.abc_co2_bilanzierer/
-├── config.json              # Einstellungen
+├── config.json              # Einstellungen + Favoriten
 ├── projects/
 │   └── <uuid>.json         # Projekt-Dateien
 ├── snapshots/
@@ -170,6 +180,18 @@ Autosave (nach Debounce):
 │       └── autosave_*.json # Max. 20
 └── logs/
     └── app.log             # Logging
+```
+
+**config.json Struktur:**
+```json
+{
+  "last_project_id": "uuid",
+  "global_csv_path": "/path/to/OBD.csv",
+  "favorites": ["mat-id-1", "mat-id-2"],
+  "favorite_names": ["Material Name 1", "Material Name 2"],
+  "theme": "dark",
+  "window_size": [1400, 900]
+}
 ```
 
 **Autosave-Logik:**
@@ -216,10 +238,17 @@ result_ac = quantity × (gwp_a1a3 + gwp_c3 + gwp_c4)
 result_acd = result_ac + (quantity × gwp_d)
 ```
 
-**Systemgrenzen:**
+**Systemgrenzen (6 Optionen):**
+
+Standard-Deklaration:
 - A1-A3: Nur Herstellung
 - A1-A3+C3+C4: Mit Entsorgung
-- A1-A3+C3+C4+D: Mit Gutschriften (falls vorhanden)
+- A1-A3+C3+C4+D: Mit Gutschriften
+
+Bio-korrigierte Deklaration:
+- A1-A3 (bio): Mit biogenem Kohlenstoff
+- A1-A3+C3+C4 (bio): Herstellung + Entsorgung, bio-korrigiert
+- A1-A3+C3+C4+D (bio): Mit Gutschriften, bio-korrigiert
 
 **Fehlende Module:**
 - C3/C4/D nicht vorhanden → automatisch 0

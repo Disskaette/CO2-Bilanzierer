@@ -143,7 +143,28 @@ class PersistenceService:
             Project-Objekt oder None
         """
         try:
+            # Zuerst: Versuche direkte ID-Datei (alte Variante)
             project_file = self.projects_path / f"{project_id}.json"
+            
+            # Falls nicht gefunden: Suche nach Datei mit ID im Namen
+            if not project_file.exists():
+                # Suche nach Datei, die die ID enthält (z.B. Projektname_ID.json)
+                # ID kann verkürzt sein (erste 8 Zeichen)
+                short_id = project_id[:8]
+                
+                for candidate in self.projects_path.glob("*.json"):
+                    # Prüfe ob Dateiname die ID enthält
+                    if short_id in candidate.stem or project_id in candidate.stem:
+                        # Prüfe ob die ID im JSON übereinstimmt
+                        try:
+                            with open(candidate, 'r', encoding='utf-8') as f:
+                                data = json.load(f)
+                            
+                            if data.get('id') == project_id:
+                                project_file = candidate
+                                break
+                        except Exception:
+                            continue
             
             if not project_file.exists():
                 self.logger.warning(f"Projekt nicht gefunden: {project_id}")

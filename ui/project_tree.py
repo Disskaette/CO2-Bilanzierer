@@ -60,7 +60,7 @@ class ProjectTreeView(ctk.CTkFrame):
         self.tree_text.bind("<Control-v>", make_readonly)
         self.tree_text.bind("<Command-v>", make_readonly)
         
-        # Buttons
+        # Buttons (in einer Linie)
         button_frame = ctk.CTkFrame(self)
         button_frame.pack(fill="x", padx=10, pady=5)
         
@@ -79,7 +79,7 @@ class ProjectTreeView(ctk.CTkFrame):
             fg_color="darkred",
             command=self._delete_variant
         )
-        del_btn.pack(side="right", padx=2)
+        del_btn.pack(side="left", padx=2)
         
         self.refresh()
     

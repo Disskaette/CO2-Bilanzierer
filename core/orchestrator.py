@@ -116,9 +116,11 @@ class AppOrchestrator:
         
         self.state.current_project = project
         
-        # CSV neu laden, falls Pfad vorhanden
-        if project.last_csv_path:
-            self.load_csv(project.last_csv_path)
+        # CSV laden mit 3-stufiger Priorität:
+        # 1. Projektspezifischer Pfad
+        # 2. Global gespeicherter Pfad
+        # 3. Fallback: data/OBD_Datenbank.csv
+        self._load_csv_with_fallback(project.last_csv_path)
         
         self.logger.info(f"Projekt geladen: {project.name}")
         self.state.trigger('project_loaded', project)
@@ -191,9 +193,51 @@ class AppOrchestrator:
     # CSV / MATERIAL-REPOSITORY
     # ========================================================================
     
+    def _load_csv_with_fallback(self, project_csv_path: Optional[str] = None) -> bool:
+        """
+        Lädt CSV mit 3-stufiger Fallback-Strategie:
+        1. Projektspezifischer Pfad (falls vorhanden und existiert)
+        2. Global gespeicherter Pfad (aus Konfiguration)
+        3. Fallback: data/OBD_Datenbank.csv im Projektordner
+        
+        Args:
+            project_csv_path: Projektspezifischer CSV-Pfad (optional)
+        
+        Returns:
+            True bei Erfolg
+        """
+        from pathlib import Path
+        
+        # 1. Versuch: Projektspezifischer Pfad
+        if project_csv_path and Path(project_csv_path).exists():
+            self.logger.info(f"Lade projektspezifische CSV: {project_csv_path}")
+            return self.load_csv(project_csv_path)
+        
+        # 2. Versuch: Global gespeicherter Pfad
+        config = self.load_config()
+        global_csv_path = config.get('global_csv_path')
+        
+        if global_csv_path and Path(global_csv_path).exists():
+            self.logger.info(f"Lade global gespeicherte CSV: {global_csv_path}")
+            return self.load_csv(global_csv_path)
+        
+        # 3. Fallback: Standard-CSV im data-Ordner
+        import __main__
+        app_dir = Path(__main__.__file__).parent if hasattr(__main__, '__file__') else Path.cwd()
+        default_csv = app_dir / "data" / "OBD_Datenbank.csv"
+        
+        if default_csv.exists():
+            self.logger.info(f"Lade Standard-CSV: {default_csv}")
+            return self.load_csv(str(default_csv))
+        
+        # Keine CSV gefunden
+        self.logger.warning("Keine CSV-Datenbank gefunden.")
+        self.logger.warning("Bitte laden Sie eine CSV über 'CSV laden' im Menü.")
+        return False
+    
     def load_csv(self, path: str) -> bool:
         """
-        Lädt CSV-Datenbank
+        Lädt CSV-Datenbank und stellt Favoriten wieder her
         
         Args:
             path: Pfad zur CSV
@@ -201,18 +245,28 @@ class AppOrchestrator:
         Returns:
             True bei Erfolg
         """
+        # Favoriten vor dem Laden sichern
+        config = self.load_config()
+        favorite_ids = config.get('favorites', [])
+        favorite_names = config.get('favorite_names', [])
+        
         success = self.material_repo.load_csv(path)
         
-        if success and self.state.current_project:
-            # Metadaten im Projekt speichern
-            metadata = self.material_repo.get_metadata()
-            self.state.current_project.last_csv_path = path
-            self.state.current_project.csv_loaded_at = metadata['loaded_at']
-            self.state.current_project.csv_separator = metadata['separator']
-            self.state.current_project.csv_decimal = metadata['decimal']
+        if success:
+            # Favoriten wiederherstellen
+            if favorite_ids or favorite_names:
+                self.material_repo.restore_favorites(favorite_ids, favorite_names)
             
-            self.notify_change()
-            self.state.trigger('csv_loaded', metadata)
+            if self.state.current_project:
+                # Metadaten im Projekt speichern
+                metadata = self.material_repo.get_metadata()
+                self.state.current_project.last_csv_path = path
+                self.state.current_project.csv_loaded_at = metadata['loaded_at']
+                self.state.current_project.csv_separator = metadata['separator']
+                self.state.current_project.csv_decimal = metadata['decimal']
+                
+                self.notify_change()
+                self.state.trigger('csv_loaded', metadata)
         
         return success
     
@@ -306,6 +360,7 @@ class AppOrchestrator:
         variant.add_row(row)
         
         self.notify_change()
+        self.state.trigger('row_added', variant_index, row.id)
         return row
     
     def update_material_row(
@@ -507,20 +562,22 @@ class AppOrchestrator:
     # ========================================================================
     
     def save_config(self) -> None:
-        """Speichert aktuelle Konfiguration"""
+        """Speichert aktuelle Konfiguration inkl. Favoriten"""
         config = {
             'last_project_id': (
                 self.state.current_project.id
                 if self.state.current_project
                 else None
             ),
-            'last_csv_path': (
-                self.state.current_project.last_csv_path
-                if self.state.current_project
+            'global_csv_path': (
+                self.material_repo.csv_path
+                if self.material_repo.csv_path
                 else None
             ),
-            'theme': 'dark',  # TODO: aus UI übernehmen
-            'window_size': [1400, 900]  # TODO: aus UI übernehmen
+            'favorites': list(self.material_repo.favorites),
+            'favorite_names': list(self.material_repo.favorite_names),
+            'theme': 'dark',
+            'window_size': [1400, 900]
         }
         
         self.persistence.save_config(config)

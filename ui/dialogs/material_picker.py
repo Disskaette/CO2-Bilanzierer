@@ -48,13 +48,13 @@ class MaterialPickerDialog(ctk.CTkToplevel):
         
         # Fenster-Konfiguration
         self.title("Material auswählen")
-        self.geometry("1000x700")
+        self.geometry("1400x750")
         
         # Zentrieren
         self.update_idletasks()
-        x = (self.winfo_screenwidth() // 2) - (1000 // 2)
-        y = (self.winfo_screenheight() // 2) - (700 // 2)
-        self.geometry(f"1000x700+{x}+{y}")
+        x = (self.winfo_screenwidth() // 2) - (1400 // 2)
+        y = (self.winfo_screenheight() // 2) - (750 // 2)
+        self.geometry(f"1400x750+{x}+{y}")
         
         # Modal
         self.transient(parent)
@@ -125,6 +125,16 @@ class MaterialPickerDialog(ctk.CTkToplevel):
         )
         self.en15804_cb.grid(row=0, column=5, padx=10, pady=5)
         
+        # Button: Eigenes Material
+        custom_btn = ctk.CTkButton(
+            filter_frame,
+            text="+ Eigenes Material",
+            width=140,
+            command=self._on_add_custom_material,
+            fg_color="darkgreen"
+        )
+        custom_btn.grid(row=0, column=6, padx=10, pady=5)
+        
         filter_frame.columnconfigure(1, weight=1)
         
         # Info-Label
@@ -169,18 +179,20 @@ class MaterialPickerDialog(ctk.CTkToplevel):
         """Erstellt Treffer-Tabelle"""
         
         columns = (
-            "name", "source", "type", "unit",
+            "fav", "name", "source", "type", "unit",
             "gwp_a", "gwp_c3", "gwp_c4", "gwp_d", "id"
         )
         
         self.tree = ttk.Treeview(
             parent,
             columns=columns,
-            show="headings",
+            show="tree headings",
             height=20
         )
         
         # Überschriften
+        self.tree.heading("#0", text="★")  # Favoriten-Spalte
+        self.tree.heading("fav", text="Fav")
         self.tree.heading("name", text="Name")
         self.tree.heading("source", text="Quelle/Hersteller")
         self.tree.heading("type", text="Datensatztyp")
@@ -191,15 +203,17 @@ class MaterialPickerDialog(ctk.CTkToplevel):
         self.tree.heading("gwp_d", text="GWP D")
         self.tree.heading("id", text="ID")
         
-        # Spaltenbreiten
-        self.tree.column("name", width=250)
-        self.tree.column("source", width=150)
-        self.tree.column("type", width=120)
-        self.tree.column("unit", width=60)
-        self.tree.column("gwp_a", width=90)
-        self.tree.column("gwp_c3", width=80)
-        self.tree.column("gwp_c4", width=80)
-        self.tree.column("gwp_d", width=80)
+        # Spaltenbreiten (angepasst)
+        self.tree.column("#0", width=30, stretch=False)  # Favoriten-Icon
+        self.tree.column("fav", width=0, stretch=False)  # Versteckt, nur für Daten
+        self.tree.column("name", width=300, minwidth=200)  # Volle Namen
+        self.tree.column("source", width=180, minwidth=150)
+        self.tree.column("type", width=100, stretch=False)  # Feste Breite
+        self.tree.column("unit", width=60, stretch=False)  # Feste Breite
+        self.tree.column("gwp_a", width=90, stretch=False)
+        self.tree.column("gwp_c3", width=70, stretch=False)
+        self.tree.column("gwp_c4", width=70, stretch=False)
+        self.tree.column("gwp_d", width=70, stretch=False)
         self.tree.column("id", width=120)
         
         # Scrollbar
@@ -214,6 +228,13 @@ class MaterialPickerDialog(ctk.CTkToplevel):
         
         # Auswahl-Handler
         self.tree.bind("<<TreeviewSelect>>", self._on_selection_changed)
+        
+        # Klick auf Favoriten-Spalte → Toggle Favorit
+        self.tree.bind("<Button-1>", self._on_tree_click)
+        
+        # Rechtsklick für Custom Materials → Löschen
+        self.tree.bind("<Button-2>", self._on_right_click)  # Mac
+        self.tree.bind("<Button-3>", self._on_right_click)  # Windows/Linux
     
     def _perform_search(self) -> None:
         """Führt Suche durch und aktualisiert Tabelle"""
@@ -258,24 +279,64 @@ class MaterialPickerDialog(ctk.CTkToplevel):
         
         # Neue Einträge einfügen (max. 500 zur Performance)
         for i, mat in enumerate(materials[:500]):
+            # Prüfen ob Favorit
+            is_fav = self.orchestrator.material_repo.is_favorite(mat.id)
+            
+            # Icon: Custom=🔧, Favorit=★, Normal=☆
+            if mat.is_custom:
+                icon = "🔧"
+            elif is_fav:
+                icon = "★"
+            else:
+                icon = "☆"
+            
             values = (
-                mat.name[:50],
-                mat.source[:30],
+                "1" if is_fav else "0",  # Versteckter Wert für Sortierung
+                mat.name,  # Voller Name, nicht abgeschnitten
+                mat.source,  # Volle Quelle
                 mat.dataset_type,
                 mat.unit,
                 f"{mat.gwp_a1a3:.3f}",
                 f"{mat.gwp_c3:.3f}",
                 f"{mat.gwp_c4:.3f}",
                 f"{mat.gwp_d:.3f}" if mat.gwp_d is not None else "-",
-                mat.id[:20]
+                mat.id
             )
             
-            self.tree.insert("", "end", values=values, iid=str(i))
+            # Tags für Custom Materials
+            tags = []
+            if is_fav:
+                tags.append("fav")
+            if mat.is_custom:
+                tags.append("custom")
+            
+            self.tree.insert("", "end", text=icon, values=values, iid=str(i), tags=tuple(tags))
         
         if len(materials) > 500:
             self.info_label.configure(
                 text=f"{len(materials)} Treffer (erste 500 angezeigt)"
             )
+    
+    def _on_tree_click(self, event) -> None:
+        """Handler für Klick auf Tree (Favoriten-Toggle)"""
+        region = self.tree.identify("region", event.x, event.y)
+        if region == "tree":  # Klick auf Icon-Spalte
+            item = self.tree.identify_row(event.y)
+            if item:
+                try:
+                    index = int(item)
+                    if 0 <= index < len(self.search_results):
+                        mat = self.search_results[index]
+                        # Toggle Favorit
+                        if self.orchestrator.material_repo.is_favorite(mat.id):
+                            self.orchestrator.material_repo.remove_favorite(mat.id)
+                        else:
+                            self.orchestrator.material_repo.add_favorite(mat.id, mat.name)
+                        
+                        # Tabelle aktualisieren
+                        self._populate_table(self.search_results)
+                except (ValueError, IndexError):
+                    pass
     
     def _on_selection_changed(self, event=None) -> None:
         """Handler für Auswahl-Änderung"""
@@ -304,3 +365,85 @@ class MaterialPickerDialog(ctk.CTkToplevel):
         
         # Dialog schließen
         self.destroy()
+    
+    def _on_add_custom_material(self) -> None:
+        """Handler für '+ Eigenes Material' Button"""
+        from ui.dialogs.custom_material_dialog import CustomMaterialDialog
+        
+        def on_save(material: Material) -> None:
+            """Callback wenn Custom Material gespeichert wurde"""
+            # In Repository speichern
+            success = self.orchestrator.material_repo.save_custom_material(material)
+            
+            if success:
+                messagebox.showinfo(
+                    "Erfolg",
+                    f"Material '{material.name}' wurde gespeichert.\n\n"
+                    f"Es ist jetzt in der Suche verfügbar."
+                )
+                
+                # Suche aktualisieren
+                self._perform_search()
+            else:
+                messagebox.showerror(
+                    "Fehler",
+                    "Das Material konnte nicht gespeichert werden."
+                )
+        
+        # Dialog öffnen
+        dialog = CustomMaterialDialog(self, on_save)
+        dialog.focus()
+    
+    def _on_right_click(self, event) -> None:
+        """Handler für Rechtsklick (Context Menu für Custom Materials)"""
+        # Item unter Maus finden
+        item = self.tree.identify_row(event.y)
+        if not item:
+            return
+        
+        try:
+            index = int(item)
+            if 0 <= index < len(self.search_results):
+                material = self.search_results[index]
+                
+                # Nur für Custom Materials Context-Menu anzeigen
+                if material.is_custom:
+                    import tkinter as tk
+                    
+                    # Context Menu erstellen
+                    menu = tk.Menu(self, tearoff=0)
+                    menu.add_command(
+                        label=f"🗑️ '{material.name}' löschen",
+                        command=lambda: self._delete_custom_material(material)
+                    )
+                    
+                    # Menu anzeigen
+                    menu.post(event.x_root, event.y_root)
+        except (ValueError, IndexError):
+            pass
+    
+    def _delete_custom_material(self, material: Material) -> None:
+        """Löscht ein Custom Material"""
+        # Bestätigung
+        answer = messagebox.askyesno(
+            "Material löschen",
+            f"Möchten Sie das eigene Material\n\n'{material.name}'\n\nwirklich löschen?\n\n"
+            f"Diese Aktion kann nicht rückgängig gemacht werden."
+        )
+        
+        if answer:
+            success = self.orchestrator.material_repo.delete_custom_material(material.id)
+            
+            if success:
+                messagebox.showinfo(
+                    "Gelöscht",
+                    f"Material '{material.name}' wurde gelöscht."
+                )
+                
+                # Suche aktualisieren
+                self._perform_search()
+            else:
+                messagebox.showerror(
+                    "Fehler",
+                    "Das Material konnte nicht gelöscht werden."
+                )

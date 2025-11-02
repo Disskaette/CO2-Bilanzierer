@@ -152,6 +152,11 @@ class MaterialRepository:
 
             # Favoriten neu mappen
             self._remap_favorites()
+            
+            # Custom Materials laden (aus gleichem Verzeichnis)
+            custom_count = self.load_custom_materials()
+            if custom_count > 0:
+                self.logger.info(f"Zusätzlich {custom_count} Custom Materials geladen")
 
             return True
 
@@ -396,16 +401,40 @@ class MaterialRepository:
 
         return results
 
-    def add_to_favorites(self, material_id: str, material_name: str) -> None:
+    def is_favorite(self, material_id: str) -> bool:
+        """Prüft ob Material ein Favorit ist"""
+        return material_id in self.favorites
+    
+    def add_favorite(self, material_id: str, material_name: str) -> None:
         """Fügt Material zu Favoriten hinzu"""
         self.favorites.add(material_id)
         self.favorite_names.add(material_name)
+    
+    def remove_favorite(self, material_id: str) -> None:
+        """Entfernt Material aus Favoriten"""
+        self.favorites.discard(material_id)
+    
+    def add_to_favorites(self, material_id: str, material_name: str) -> None:
+        """Fügt Material zu Favoriten hinzu (Alias für Kompatibilität)"""
+        self.add_favorite(material_id, material_name)
 
     def track_usage(self, material_id: str, material_name: str) -> None:
         """Zählt Verwendung eines Materials"""
         self.usage_counter[material_id] += 1
-        self.add_to_favorites(material_id, material_name)
+        self.add_favorite(material_id, material_name)
 
+    def restore_favorites(self, favorite_ids: List[str], favorite_names: List[str]) -> None:
+        """
+        Stellt Favoriten aus gespeicherter Konfiguration wieder her
+        
+        Args:
+            favorite_ids: Liste von Material-IDs
+            favorite_names: Liste von Material-Namen
+        """
+        self.favorites = set(favorite_ids)
+        self.favorite_names = set(favorite_names)
+        self.logger.info(f"Favoriten wiederhergestellt: {len(self.favorites)} IDs, {len(self.favorite_names)} Namen")
+    
     def _remap_favorites(self) -> None:
         """
         Mappt Favoriten nach CSV-Wechsel neu
@@ -431,11 +460,181 @@ class MaterialRepository:
 
     def get_metadata(self) -> Dict[str, Any]:
         """Gibt Metadaten der geladenen CSV zurück"""
+        custom_count = sum(1 for m in self.materials if m.is_custom)
         return {
             'path': self.csv_path,
             'loaded_at': self.loaded_at,
             'separator': self.separator,
             'decimal': self.decimal,
             'count': len(self.materials),
-            'favorites': len(self.favorites)
+            'favorites': len(self.favorites),
+            'custom_materials': custom_count
         }
+    
+    # ========================================================================
+    # CUSTOM MATERIALS
+    # ========================================================================
+    
+    def get_custom_materials_path(self) -> Path:
+        """Gibt Pfad zur custom_materials.csv zurück"""
+        if self.csv_path:
+            # Im gleichen Verzeichnis wie die Haupt-CSV
+            return Path(self.csv_path).parent / 'custom_materials.csv'
+        # Fallback: data-Ordner im Projektverzeichnis
+        return Path(__file__).parent / 'custom_materials.csv'
+    
+    def load_custom_materials(self) -> int:
+        """
+        Lädt eigene Materialien aus custom_materials.csv
+        
+        Returns:
+            Anzahl geladener Custom Materials
+        """
+        custom_path = self.get_custom_materials_path()
+        
+        if not custom_path.exists():
+            self.logger.info(f"Keine Custom Materials gefunden: {custom_path}")
+            return 0
+        
+        try:
+            loaded_count = 0
+            with open(custom_path, 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f, delimiter=';')
+                
+                for row in reader:
+                    # Leere Zeilen überspringen
+                    if not row.get('UUID') or not row.get('Name'):
+                        continue
+                    
+                    try:
+                        # Custom Materials verwenden Punkt als Dezimalzeichen
+                        # Material erstellen
+                        material = Material(
+                            id=row['UUID'],
+                            name=row['Name'],
+                            source=row['Quelle'],
+                            dataset_type=row['Datensatztyp'],
+                            unit=row['Einheit'],
+                            gwp_a1a3=self._parse_float(row['GWP_A1-A3'], '.'),
+                            gwp_c3=self._parse_float(row.get('GWP_C3', '0'), '.'),
+                            gwp_c4=self._parse_float(row.get('GWP_C4', '0'), '.'),
+                            gwp_d=self._parse_float(row.get('GWP_D', ''), '.') if row.get('GWP_D') else None,
+                            biogenic_carbon=self._parse_float(row.get('biogenic_carbon', ''), '.') if row.get('biogenic_carbon') else None,
+                            conformity=row.get('conformity', 'Eigene EPD'),
+                            is_custom=True
+                        )
+                        
+                        self.materials.append(material)
+                        loaded_count += 1
+                        
+                    except Exception as e:
+                        self.logger.warning(f"Fehler beim Laden von Custom Material: {e}")
+                        continue
+            
+            self.logger.info(f"{loaded_count} Custom Materials geladen")
+            return loaded_count
+            
+        except Exception as e:
+            self.logger.error(f"Fehler beim Laden von Custom Materials: {e}", exc_info=True)
+            return 0
+    
+    def save_custom_material(self, material: Material) -> bool:
+        """
+        Speichert ein neues Custom Material
+        
+        Args:
+            material: Material-Objekt (mit is_custom=True)
+        
+        Returns:
+            True bei Erfolg
+        """
+        if not material.is_custom:
+            self.logger.error("Nur Custom Materials können gespeichert werden")
+            return False
+        
+        custom_path = self.get_custom_materials_path()
+        
+        try:
+            # Prüfen ob Datei existiert
+            file_exists = custom_path.exists()
+            
+            # Ans Ende anhängen
+            with open(custom_path, 'a', encoding='utf-8', newline='') as f:
+                writer = csv.writer(f, delimiter=';')
+                
+                # Header schreiben wenn neue Datei
+                if not file_exists or custom_path.stat().st_size == 0:
+                    writer.writerow([
+                        'UUID', 'Name', 'Quelle', 'Datensatztyp', 'Einheit',
+                        'GWP_A1-A3', 'GWP_C3', 'GWP_C4', 'GWP_D', 'biogenic_carbon', 'conformity'
+                    ])
+                
+                # Material schreiben
+                writer.writerow([
+                    material.id,
+                    material.name,
+                    material.source,
+                    material.dataset_type,
+                    material.unit,
+                    f"{material.gwp_a1a3:.6f}",
+                    f"{material.gwp_c3:.6f}",
+                    f"{material.gwp_c4:.6f}",
+                    f"{material.gwp_d:.6f}" if material.gwp_d is not None else "",
+                    f"{material.biogenic_carbon:.6f}" if material.biogenic_carbon is not None else "",
+                    material.conformity
+                ])
+            
+            # Zu materials hinzufügen
+            self.materials.append(material)
+            self.logger.info(f"Custom Material gespeichert: {material.name}")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Fehler beim Speichern von Custom Material: {e}", exc_info=True)
+            return False
+    
+    def delete_custom_material(self, material_id: str) -> bool:
+        """
+        Löscht ein Custom Material
+        
+        Args:
+            material_id: UUID des Materials
+        
+        Returns:
+            True bei Erfolg
+        """
+        # Material finden
+        material = next((m for m in self.materials if m.id == material_id and m.is_custom), None)
+        if not material:
+            self.logger.error(f"Custom Material nicht gefunden: {material_id}")
+            return False
+        
+        custom_path = self.get_custom_materials_path()
+        
+        try:
+            # Alle Materials außer dem zu löschenden einlesen
+            remaining_materials = []
+            
+            with open(custom_path, 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f, delimiter=';')
+                for row in reader:
+                    if row['UUID'] != material_id:
+                        remaining_materials.append(row)
+            
+            # Neu schreiben
+            with open(custom_path, 'w', encoding='utf-8', newline='') as f:
+                if remaining_materials:
+                    fieldnames = ['UUID', 'Name', 'Quelle', 'Datensatztyp', 'Einheit',
+                                'GWP_A1-A3', 'GWP_C3', 'GWP_C4', 'GWP_D', 'biogenic_carbon', 'conformity']
+                    writer = csv.DictWriter(f, fieldnames=fieldnames, delimiter=';')
+                    writer.writeheader()
+                    writer.writerows(remaining_materials)
+            
+            # Aus materials entfernen
+            self.materials = [m for m in self.materials if m.id != material_id]
+            self.logger.info(f"Custom Material gelöscht: {material.name}")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Fehler beim Löschen von Custom Material: {e}", exc_info=True)
+            return False

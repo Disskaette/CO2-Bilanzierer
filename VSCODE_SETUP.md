@@ -88,10 +88,12 @@ type %APPDATA%\abc_co2_bilanzierer\logs\app.log
 
 **Erfolgreicher Start zeigt:**
 ```
-INFO - ABC-CO₂-Bilanzierer v1.0.0 gestartet
+INFO - ABC-CO₂-Bilanzierer v1.1.0 gestartet
 INFO - Lade Standard-CSV: .../data/OBD_Datenbank.csv
 INFO - Format erkannt: Trenner=';', Dezimal=','
-INFO - CSV geladen: 26076 Materialien
+INFO - CSV geladen: 2988 Materialien
+INFO - Favoriten wiederhergestellt: X IDs, Y Namen
+INFO - 0 Custom Materials geladen
 INFO - Standard-CSV erfolgreich geladen
 INFO - Starte Hauptschleife
 ```
