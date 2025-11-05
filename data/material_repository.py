@@ -413,15 +413,44 @@ class MaterialRepository:
     def remove_favorite(self, material_id: str) -> None:
         """Entfernt Material aus Favoriten"""
         self.favorites.discard(material_id)
+        
+        # Auch den Namen entfernen, um Remapping zu verhindern
+        for material in self.materials:
+            if material.id == material_id:
+                self.favorite_names.discard(material.name)
+                break
     
     def add_to_favorites(self, material_id: str, material_name: str) -> None:
         """Fügt Material zu Favoriten hinzu (Alias für Kompatibilität)"""
         self.add_favorite(material_id, material_name)
+    
+    def get_recently_used(self, limit: int = 30) -> List[Material]:
+        """Gibt die zuletzt/am häufigsten verwendeten Materialien zurück (max. 30)"""
+        if not self.usage_counter:
+            return []
+        
+        # Sortiere nach Verwendungshäufigkeit (absteigend)
+        sorted_ids = [mat_id for mat_id, _ in self.usage_counter.most_common(limit)]
+        
+        # Material-Objekte holen
+        result = []
+        for mat_id in sorted_ids:
+            for material in self.materials:
+                if material.id == mat_id:
+                    result.append(material)
+                    break
+        
+        return result
 
     def track_usage(self, material_id: str, material_name: str) -> None:
-        """Zählt Verwendung eines Materials"""
+        """Zählt Verwendung eines Materials (ohne automatische Favoriten-Hinzufügung)"""
         self.usage_counter[material_id] += 1
-        self.add_favorite(material_id, material_name)
+        
+        # Begrenze auf max 30 Einträge (entferne am wenigsten genutzte)
+        if len(self.usage_counter) > 30:
+            # Finde das am wenigsten genutzte Material
+            least_used = self.usage_counter.most_common()[-1]
+            del self.usage_counter[least_used[0]]
 
     def restore_favorites(self, favorite_ids: List[str], favorite_names: List[str]) -> None:
         """
@@ -434,6 +463,16 @@ class MaterialRepository:
         self.favorites = set(favorite_ids)
         self.favorite_names = set(favorite_names)
         self.logger.info(f"Favoriten wiederhergestellt: {len(self.favorites)} IDs, {len(self.favorite_names)} Namen")
+    
+    def restore_usage_counter(self, usage_data: Dict[str, int]) -> None:
+        """
+        Stellt Verwendungszähler aus gespeicherter Konfiguration wieder her
+        
+        Args:
+            usage_data: Dictionary mit material_id: count
+        """
+        self.usage_counter = Counter(usage_data)
+        self.logger.info(f"Verwendungszähler wiederhergestellt: {len(self.usage_counter)} Einträge")
     
     def _remap_favorites(self) -> None:
         """

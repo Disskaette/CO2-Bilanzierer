@@ -105,16 +105,6 @@ class MaterialPickerDialog(ctk.CTkToplevel):
         self.type_combo.set("alle")
         self.type_combo.grid(row=0, column=3, padx=5, pady=5)
         
-        # Favoriten-Checkbox
-        self.favorites_var = ctk.BooleanVar(value=False)
-        self.favorites_cb = ctk.CTkCheckBox(
-            filter_frame,
-            text="Nur Favoriten",
-            variable=self.favorites_var,
-            command=self._perform_search
-        )
-        self.favorites_cb.grid(row=0, column=4, padx=10, pady=5)
-        
         # EN 15804+A2 Checkbox
         self.en15804_var = ctk.BooleanVar(value=True)  # Standardmäßig aktiviert
         self.en15804_cb = ctk.CTkCheckBox(
@@ -123,7 +113,7 @@ class MaterialPickerDialog(ctk.CTkToplevel):
             variable=self.en15804_var,
             command=self._perform_search
         )
-        self.en15804_cb.grid(row=0, column=5, padx=10, pady=5)
+        self.en15804_cb.grid(row=0, column=4, padx=10, pady=5)
         
         # Button: Eigenes Material
         custom_btn = ctk.CTkButton(
@@ -133,7 +123,7 @@ class MaterialPickerDialog(ctk.CTkToplevel):
             command=self._on_add_custom_material,
             fg_color="darkgreen"
         )
-        custom_btn.grid(row=0, column=6, padx=10, pady=5)
+        custom_btn.grid(row=0, column=5, padx=10, pady=5)
         
         filter_frame.columnconfigure(1, weight=1)
         
@@ -144,11 +134,23 @@ class MaterialPickerDialog(ctk.CTkToplevel):
             font=ctk.CTkFont(size=10),
             text_color="gray"
         )
-        self.info_label.pack(anchor="w", padx=15)
+        self.info_label.pack(anchor="w", padx=15, pady=(0, 5))
         
-        # Tabelle
+        # Tab-System (nur für Filterung, keine Inhalte)
+        self.tab_view = ctk.CTkTabview(self, height=40)
+        self.tab_view.pack(fill="x", padx=10, pady=(0, 5))
+        
+        # Tabs erstellen
+        self.tab_all = self.tab_view.add("Alle Materialien")
+        self.tab_recent = self.tab_view.add("Zuletzt benutzt")
+        self.tab_favorites = self.tab_view.add("Favoriten")
+        
+        # Tab-Wechsel-Handler
+        self.tab_view.configure(command=self._on_tab_changed)
+        
+        # Tabelle (außerhalb der Tabs, immer sichtbar)
         table_frame = ctk.CTkFrame(self)
-        table_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        table_frame.pack(fill="both", expand=True, padx=10, pady=(0, 10))
         
         self._create_table(table_frame)
         
@@ -236,32 +238,64 @@ class MaterialPickerDialog(ctk.CTkToplevel):
         self.tree.bind("<Button-2>", self._on_right_click)  # Mac
         self.tree.bind("<Button-3>", self._on_right_click)  # Windows/Linux
     
+    def _on_tab_changed(self) -> None:
+        """Handler für Tab-Wechsel"""
+        self._perform_search()
+    
     def _perform_search(self) -> None:
         """Führt Suche durch und aktualisiert Tabelle"""
         
         # Suchparameter
         query = self.search_entry.get()
         dataset_type = self.type_combo.get()
-        favorites_only = self.favorites_var.get()
         en15804_a2_only = self.en15804_var.get()
+        
+        # Prüfen welcher Tab aktiv ist
+        active_tab = self.tab_view.get()
+        recently_used_only = (active_tab == "Zuletzt benutzt")
+        favorites_only = (active_tab == "Favoriten")
         
         # Suche durchführen
         try:
-            results = self.orchestrator.search_materials(
-                query=query,
-                dataset_type=dataset_type if dataset_type != "alle" else None,
-                favorites_only=favorites_only,
-                en15804_a2_only=en15804_a2_only
-            )
+            if recently_used_only:
+                # Zuletzt benutzte Materialien holen
+                results = self.orchestrator.get_recently_used_materials()
+                
+                # Optional: Filter anwenden (query, dataset_type, en15804_a2)
+                if query:
+                    query_lower = query.lower()
+                    results = [
+                        mat for mat in results
+                        if query_lower in mat.name.lower() or
+                           query_lower in mat.source.lower() or
+                           query_lower in mat.id.lower()
+                    ]
+                
+                if dataset_type and dataset_type != "alle":
+                    results = [mat for mat in results if mat.dataset_type == dataset_type]
+                
+                if en15804_a2_only:
+                    results = [mat for mat in results if mat.is_en15804_a2()]
+            else:
+                # Normale Suche (Alle Materialien oder Favoriten)
+                results = self.orchestrator.search_materials(
+                    query=query,
+                    dataset_type=dataset_type if dataset_type != "alle" else None,
+                    favorites_only=favorites_only,
+                    en15804_a2_only=en15804_a2_only
+                )
             
             self.search_results = results
             
             # Info aktualisieren
             csv_meta = self.orchestrator.get_csv_metadata()
             total = csv_meta.get('count', 0)
-            self.info_label.configure(
-                text=f"{len(results)} von {total} Materialien"
-            )
+            info_text = f"{len(results)} von {total} Materialien"
+            if recently_used_only:
+                info_text = f"{len(results)} zuletzt benutzte Materialien"
+            elif favorites_only:
+                info_text = f"{len(results)} Favoriten"
+            self.info_label.configure(text=info_text)
             
             # Tabelle füllen
             self._populate_table(results)
@@ -327,14 +361,47 @@ class MaterialPickerDialog(ctk.CTkToplevel):
                     index = int(item)
                     if 0 <= index < len(self.search_results):
                         mat = self.search_results[index]
+                        
                         # Toggle Favorit
-                        if self.orchestrator.material_repo.is_favorite(mat.id):
+                        was_favorite = self.orchestrator.material_repo.is_favorite(mat.id)
+                        if was_favorite:
                             self.orchestrator.material_repo.remove_favorite(mat.id)
                         else:
                             self.orchestrator.material_repo.add_favorite(mat.id, mat.name)
                         
-                        # Tabelle aktualisieren
-                        self._populate_table(self.search_results)
+                        # Konfiguration speichern um Favoriten zu persistieren
+                        self.orchestrator.save_config()
+                        
+                        # Optimierte Aktualisierung
+                        active_tab = self.tab_view.get()
+                        if active_tab in ["Favoriten", "Zuletzt benutzt"]:
+                            # Filter ist aktiv: Komplette Suche neu durchführen
+                            # (Material könnte aus der Liste verschwinden müssen)
+                            self._perform_search()
+                        else:
+                            # Kein Filter aktiv: Nur Icon in der Zeile aktualisieren
+                            # -> Viel schneller!
+                            is_now_favorite = not was_favorite
+                            if mat.is_custom:
+                                new_icon = "🔧"
+                            elif is_now_favorite:
+                                new_icon = "★"
+                            else:
+                                new_icon = "☆"
+                            
+                            # Icon und versteckten Wert aktualisieren
+                            values = list(self.tree.item(item, "values"))
+                            values[0] = "1" if is_now_favorite else "0"
+                            
+                            # Tags aktualisieren
+                            tags = list(self.tree.item(item, "tags"))
+                            if is_now_favorite and "fav" not in tags:
+                                tags.append("fav")
+                            elif not is_now_favorite and "fav" in tags:
+                                tags.remove("fav")
+                            
+                            self.tree.item(item, text=new_icon, values=values, tags=tuple(tags))
+                            
                 except (ValueError, IndexError):
                     pass
     

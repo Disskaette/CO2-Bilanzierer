@@ -245,10 +245,11 @@ class AppOrchestrator:
         Returns:
             True bei Erfolg
         """
-        # Favoriten vor dem Laden sichern
+        # Favoriten und Usage Counter vor dem Laden sichern
         config = self.load_config()
         favorite_ids = config.get('favorites', [])
         favorite_names = config.get('favorite_names', [])
+        usage_data = config.get('usage_counter', {})
         
         success = self.material_repo.load_csv(path)
         
@@ -256,6 +257,10 @@ class AppOrchestrator:
             # Favoriten wiederherstellen
             if favorite_ids or favorite_names:
                 self.material_repo.restore_favorites(favorite_ids, favorite_names)
+            
+            # Usage Counter wiederherstellen
+            if usage_data:
+                self.material_repo.restore_usage_counter(usage_data)
             
             if self.state.current_project:
                 # Metadaten im Projekt speichern
@@ -294,6 +299,10 @@ class AppOrchestrator:
     def get_csv_metadata(self) -> Dict[str, Any]:
         """Gibt CSV-Metadaten zurück"""
         return self.material_repo.get_metadata()
+    
+    def get_recently_used_materials(self) -> List[Material]:
+        """Gibt zuletzt/am häufigsten verwendete Materialien zurück"""
+        return self.material_repo.get_recently_used()
     
     # ========================================================================
     # VARIANTEN-VERWALTUNG
@@ -562,7 +571,10 @@ class AppOrchestrator:
     # ========================================================================
     
     def save_config(self) -> None:
-        """Speichert aktuelle Konfiguration inkl. Favoriten"""
+        """Speichert aktuelle Konfiguration inkl. Favoriten und Usage Counter"""
+        # Speichere nur die Top 30 häufigsten Materialien
+        usage_dict = dict(self.material_repo.usage_counter.most_common(30))
+        
         config = {
             'last_project_id': (
                 self.state.current_project.id
@@ -576,6 +588,7 @@ class AppOrchestrator:
             ),
             'favorites': list(self.material_repo.favorites),
             'favorite_names': list(self.material_repo.favorite_names),
+            'usage_counter': usage_dict,
             'theme': 'dark',
             'window_size': [1400, 900]
         }

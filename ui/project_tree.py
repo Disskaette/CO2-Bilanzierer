@@ -79,7 +79,7 @@ class ProjectTreeView(ctk.CTkFrame):
             fg_color="darkred",
             command=self._delete_variant
         )
-        del_btn.pack(side="left", padx=2)
+        del_btn.pack(side="right", padx=2)
         
         self.refresh()
     
