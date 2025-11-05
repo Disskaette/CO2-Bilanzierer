@@ -85,10 +85,33 @@ class MaterialRepository:
             # CSV einlesen - ÖKOBAUDAT Format (ein Material = mehrere Zeilen)
             materials_dict = {}  # UUID -> Material-Daten
 
-            with open(path, 'r', encoding=encoding, errors='replace') as f:
-                reader = csv.DictReader(f, delimiter=separator)
-
-                for idx, row in enumerate(reader):
+            # Verwende einfach cp1252 (Windows-Standard) - funktioniert für deutsche Umlaute
+            # Dies ist schnell und zuverlässig für ÖKOBAUDAT
+            used_encoding = 'cp1252'
+            
+            try:
+                with open(path, 'r', encoding='cp1252') as f:
+                    file_content = f.read()
+                self.logger.info(f"CSV-Encoding: {used_encoding}")
+            except Exception as e:
+                # Fallback auf UTF-8
+                self.logger.warning(f"cp1252 fehlgeschlagen, verwende UTF-8: {e}")
+                try:
+                    with open(path, 'r', encoding='utf-8') as f:
+                        file_content = f.read()
+                    used_encoding = 'utf-8'
+                except Exception:
+                    # Letzter Fallback mit errors='replace'
+                    with open(path, 'r', encoding='utf-8', errors='replace') as f:
+                        file_content = f.read()
+                    used_encoding = 'utf-8 (with errors replaced)'
+                self.logger.info(f"CSV-Encoding: {used_encoding}")
+            
+            # Parse CSV aus String
+            from io import StringIO
+            reader = csv.DictReader(StringIO(file_content), delimiter=separator)
+            
+            for idx, row in enumerate(reader):
                     try:
                         # UUID als eindeutige ID
                         uuid = row.get('UUID', f"mat_{idx}")
@@ -401,6 +424,21 @@ class MaterialRepository:
 
         return results
 
+    def get_material_by_id(self, material_id: str) -> Optional[Material]:
+        """
+        Holt Material anhand der ID (UUID)
+        
+        Args:
+            material_id: Material-ID (UUID)
+            
+        Returns:
+            Material oder None wenn nicht gefunden
+        """
+        for material in self.materials:
+            if material.id == material_id:
+                return material
+        return None
+    
     def is_favorite(self, material_id: str) -> bool:
         """Prüft ob Material ein Favorit ist"""
         return material_id in self.favorites

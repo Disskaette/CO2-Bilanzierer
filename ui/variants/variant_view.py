@@ -211,7 +211,8 @@ class VariantView(ctk.CTkFrame):
                 ax.spines['right'].set_visible(False)
 
         # Festes Layout für konsistente Größe - Diagramm schmäler
-        self.figure.subplots_adjust(left=0.1, right=0.35, top=0.92, bottom=0.12)
+        self.figure.subplots_adjust(
+            left=0.1, right=0.35, top=0.88, bottom=0.05)
 
         self.canvas = FigureCanvasTkAgg(self.figure, parent)
         self.canvas.draw()
@@ -246,46 +247,46 @@ class VariantView(ctk.CTkFrame):
 
         # Style konfigurieren (Theme-bewusst)
         style = ttk.Style()
-        
+
         # Theme-Farben anpassen
         if current_mode == "Dark":
             # Dark Mode: Dunkle Tabelle
             style.theme_use('default')  # Wichtig: Theme zurücksetzen
             style.configure("Treeview",
-                background="#2b2b2b",
-                fieldbackground="#2b2b2b",
-                foreground="white",
-                rowheight=20,
-                borderwidth=0)
+                            background="#2b2b2b",
+                            fieldbackground="#2b2b2b",
+                            foreground="white",
+                            rowheight=20,
+                            borderwidth=0)
             style.configure("Treeview.Heading",
-                background="#1f1f1f",
-                foreground="white",
-                borderwidth=1,
-                relief="flat")
-            style.map('Treeview', 
-                background=[('selected', '#1f6aa5')],
-                foreground=[('selected', 'white')])
+                            background="#1f1f1f",
+                            foreground="white",
+                            borderwidth=1,
+                            relief="flat")
+            style.map('Treeview',
+                      background=[('selected', '#1f6aa5')],
+                      foreground=[('selected', 'white')])
             style.map('Treeview.Heading',
-                background=[('active', '#2b2b2b')])
+                      background=[('active', '#2b2b2b')])
         else:
             # Light Mode: Helle Tabelle
             style.theme_use('default')
             style.configure("Treeview",
-                background="white",
-                fieldbackground="white",
-                foreground="black",
-                rowheight=20,
-                borderwidth=0)
+                            background="white",
+                            fieldbackground="white",
+                            foreground="black",
+                            rowheight=20,
+                            borderwidth=0)
             style.configure("Treeview.Heading",
-                background="#d0d0d0",
-                foreground="black",
-                borderwidth=1,
-                relief="flat")
-            style.map('Treeview', 
-                background=[('selected', '#3b8ed0')],
-                foreground=[('selected', 'white')])
+                            background="#d0d0d0",
+                            foreground="black",
+                            borderwidth=1,
+                            relief="flat")
+            style.map('Treeview',
+                      background=[('selected', '#3b8ed0')],
+                      foreground=[('selected', 'white')])
             style.map('Treeview.Heading',
-                background=[('active', '#e0e0e0')])
+                      background=[('active', '#e0e0e0')])
 
         # Spaltenüberschriften
         self.tree.heading("pos", text="Pos")
@@ -313,20 +314,20 @@ class VariantView(ctk.CTkFrame):
         scrollbar = ttk.Scrollbar(
             parent, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscrollcommand=scrollbar.set)
-        
+
         # Scrollbar-Style anpassen
         if current_mode == "Dark":
             style.configure("Vertical.TScrollbar",
-                background="#2b2b2b",
-                troughcolor="#1f1f1f",
-                bordercolor="#1f1f1f",
-                arrowcolor="white")
+                            background="#2b2b2b",
+                            troughcolor="#1f1f1f",
+                            bordercolor="#1f1f1f",
+                            arrowcolor="white")
         else:
             style.configure("Vertical.TScrollbar",
-                background="#e0e0e0",
-                troughcolor="white",
-                bordercolor="#d0d0d0",
-                arrowcolor="black")
+                            background="#e0e0e0",
+                            troughcolor="white",
+                            bordercolor="#d0d0d0",
+                            arrowcolor="black")
 
         self.tree.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
@@ -422,7 +423,7 @@ class VariantView(ctk.CTkFrame):
             font=ctk.CTkFont(size=12, weight="bold")
         )
         sum_ac_label.pack(side="left", padx=10)
-        
+
         # Bio-korrigierte Werte (falls vorhanden)
         if variant.sum_a_bio is not None:
             sum_a_bio_label = ctk.CTkLabel(
@@ -432,7 +433,7 @@ class VariantView(ctk.CTkFrame):
                 text_color="lightgreen"
             )
             sum_a_bio_label.pack(side="left", padx=10)
-        
+
         if variant.sum_ac_bio is not None:
             sum_ac_bio_label = ctk.CTkLabel(
                 sum_frame,

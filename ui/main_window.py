@@ -11,6 +11,7 @@ from core.orchestrator import AppOrchestrator
 from ui.project_tree import ProjectTreeView
 from ui.dashboard.dashboard_view import DashboardView
 from ui.variants.variant_view import VariantView
+from ui.dialogs.export_dialog_pro import ExportDialogPro
 
 logger = logging.getLogger(__name__)
 
@@ -368,23 +369,13 @@ class MainWindow(ctk.CTk):
         ).pack(pady=20, padx=20, fill="x")
 
     def _show_export_menu(self) -> None:
-        """Zeigt Export-Menü"""
-        dialog = ctk.CTkToplevel(self)
-        dialog.title("Export")
-        dialog.geometry("300x150")
-        dialog.transient(self)
-
-        ctk.CTkButton(
-            dialog,
-            text="PDF-Report",
-            command=lambda: [dialog.destroy(), self._export_pdf()]
-        ).pack(pady=5, padx=20, fill="x")
-
-        ctk.CTkButton(
-            dialog,
-            text="Schließen",
-            command=dialog.destroy
-        ).pack(pady=20, padx=20, fill="x")
+        """Zeigt professionellen Export-Dialog"""
+        project = self.orchestrator.get_current_project()
+        if not project:
+            messagebox.showwarning("Kein Projekt", "Bitte erstellen oder laden Sie ein Projekt.")
+            return
+        
+        ExportDialogPro(self, project)
 
     def _new_project(self) -> None:
         """Erstellt neues Projekt"""
@@ -478,20 +469,6 @@ class MainWindow(ctk.CTk):
             else:
                 messagebox.showerror("Fehler", "Fehler beim Laden der CSV")
 
-    def _export_pdf(self) -> None:
-        """Exportiert PDF"""
-        filepath = filedialog.asksaveasfilename(
-            title="PDF speichern",
-            defaultextension=".pdf",
-            filetypes=[("PDF", "*.pdf")]
-        )
-
-        if filepath:
-            # TODO: PDF-Export implementieren
-            messagebox.showwarning(
-                "Noch nicht verfügbar",
-                "PDF-Export wird in zukünftiger Version implementiert"
-            )
 
     def _toggle_theme(self) -> None:
         """Wechselt zwischen Dark/Light Mode"""

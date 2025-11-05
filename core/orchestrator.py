@@ -103,8 +103,8 @@ class AppOrchestrator:
         Lädt Projekt
         
         Args:
-            project_id: ID des zu ladenden Projekts
-        
+            project_id: Projekt-ID
+            
         Returns:
             True bei Erfolg
         """
@@ -116,16 +116,55 @@ class AppOrchestrator:
         
         self.state.current_project = project
         
-        # CSV laden mit 3-stufiger Priorität:
-        # 1. Projektspezifischer Pfad
-        # 2. Global gespeicherter Pfad
-        # 3. Fallback: data/OBD_Datenbank.csv
-        self._load_csv_with_fallback(project.last_csv_path)
+        # CSV neu laden wenn Projekt CSV-Pfad hat
+        if project.last_csv_path:
+            self.logger.info(f"Lade projektspezifische CSV: {project.last_csv_path}")
+            self.material_repo.load_csv(project.last_csv_path)
+            
+            # Sanfte Aktualisierung: Materialnamen aus aktueller CSV holen
+            # OHNE alte Materialien zu löschen die nicht mehr in CSV sind
+            self._update_material_names_from_csv(project)
         
         self.logger.info(f"Projekt geladen: {project.name}")
         self.state.trigger('project_loaded', project)
         
         return True
+    
+    def _update_material_names_from_csv(self, project: Project) -> None:
+        """
+        Aktualisiert Materialnamen aus aktueller CSV (für korrektes Encoding)
+        Behält alte Daten bei wenn Material nicht mehr in CSV existiert
+        
+        Args:
+            project: Projekt dessen Materialien aktualisiert werden sollen
+        """
+        updated_count = 0
+        missing_count = 0
+        
+        for variant in project.variants:
+            for row in variant.rows:
+                if not row.material_id:
+                    continue
+                
+                # Versuche Material in aktueller CSV zu finden
+                material = self.material_repo.get_material_by_id(row.material_id)
+                
+                if material:
+                    # Material gefunden: Aktualisiere Namen (für korrektes Encoding)
+                    if row.material_name != material.name:
+                        old_name = row.material_name
+                        row.material_name = material.name
+                        updated_count += 1
+                        self.logger.debug(f"Material-Name aktualisiert: '{old_name}' -> '{material.name}'")
+                else:
+                    # Material nicht mehr in CSV: Behalte alten Stand
+                    missing_count += 1
+                    self.logger.debug(f"Material nicht in CSV gefunden (behalte alten Stand): {row.material_name}")
+        
+        if updated_count > 0:
+            self.logger.info(f"✓ {updated_count} Material-Namen aktualisiert (Encoding korrigiert)")
+        if missing_count > 0:
+            self.logger.info(f"ℹ {missing_count} Materialien nicht mehr in CSV (alte Daten beibehalten)")
     
     def save_project(self) -> bool:
         """

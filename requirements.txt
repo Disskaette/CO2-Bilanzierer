@@ -18,10 +18,12 @@ matplotlib==3.8.2
 
 # Datenverarbeitung (CSV-Parsing & numerische Berechnungen)
 numpy==1.26.2
+chardet==5.2.0  # Automatische Encoding-Erkennung für CSV (Umlaute)
 
-# Optional: PDF-Export (für zukünftige Implementierung)
-# reportlab==4.0.7
-# pillow==10.1.0
+# PDF & Excel Export
+reportlab==4.4.4
+pillow==10.4.0
+openpyxl==3.1.5
 
 # Installation:
 # pip install -r requirements.txt

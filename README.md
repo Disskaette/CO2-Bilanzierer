@@ -36,6 +36,17 @@ Desktop-Anwendung für die Ökobilanzierung von Bauwerken nach ABC-Entwurfstafel
   - EN 15804+A2 Filter (Standard aktiviert)
   - Datensatztyp-Filter
 - **Custom Materials** - Eigene EPDs hinzufügen/löschen
+- **Export-Funktionen** (professionell neu implementiert):
+  - **PDF-Export** im Excel-Tool-Stil mit:
+    - PageTemplate (Header/Footer auf jeder Seite)
+    - Logo, Projektname, Metadaten
+    - Gestapelte/horizontale Balkendiagramme (200 DPI)
+    - Professionelle Tabellen (graue Header, SUMMEN-Zeile, Grid)
+    - Info-Blöcke (Methodik, Projektbeschreibung, etc.)
+    - Kommentar-Felder pro Variante
+    - Modularer Aufbau (7 separate Module)
+  - **Excel-Export** mit allen Varianten und optionalen Diagrammen
+  - Erweiteter Dialog mit Checkboxen für alle Optionen
 - **Autosave & Snapshots** (max. 20 pro Projekt, Debounce 800ms)
 - **Persistenz** im Benutzerverzeichnis mit **Favoriten-Speicherung**
 - **Demo-Projekt** beim ersten Start (3 Varianten: Holzbau, Stahlbau, Stahlbetonbau)
@@ -44,11 +55,10 @@ Desktop-Anwendung für die Ökobilanzierung von Bauwerken nach ABC-Entwurfstafel
 
 ### 🚧 TODO (in kommenden Versionen)
 
-- **PDF-Export** für Reports
 - **Erweiterte Umweltindikatoren** (EN 15804+A2: PENRT, AP, EP, etc.)
 - **Dateibaum** mit Ordner-/Unterordner-Struktur
 - **Einheiten-Konvertierung** (aktuell: Eingabe in CSV-Einheit)
-- **Erweiterte Diagrammoptionen** (Legenden, Export als PNG)
+- **Erweiterte Diagrammoptionen** (Export als PNG, interaktive Legenden)
 
 ## Installation
 
@@ -94,7 +104,17 @@ CO2-Bilanzierung/
 │   └── persistence.py         # Speichern/Laden (JSON)
 │
 ├── services/                   # Business-Logik
-│   └── calculation_service.py # CO₂-Berechnungen
+│   ├── calculation_service.py # CO₂-Berechnungen
+│   ├── pdf/                   # Professioneller PDF-Export (neu)
+│   │   ├── __init__.py
+│   │   ├── pdf_config.py      # Konfigurationsklassen
+│   │   ├── pdf_styles.py      # Style-Definitionen
+│   │   ├── pdf_charts.py      # Diagramm-Erstellung
+│   │   ├── pdf_tables.py      # Tabellen-Erstellung
+│   │   ├── pdf_header_footer.py # Header/Footer
+│   │   └── pdf_export_pro.py  # Hauptklasse
+│   ├── pdf_export.py          # PDF-Export (alt, kompatibel)
+│   └── excel_export.py        # Excel-Export
 │
 ├── data/                       # Daten-Layer
 │   └── material_repository.py # CSV-Verwaltung
@@ -108,7 +128,10 @@ CO2-Bilanzierung/
 │   ├── variants/
 │   │   └── variant_view.py    # Variantenansicht (Tabs 2-6)
 │   └── dialogs/
-│       └── material_picker.py # Material-Such-Dialog
+│       ├── material_picker.py # Material-Such-Dialog
+│       ├── custom_material_dialog.py # Custom EPD Dialog
+│       ├── export_dialog.py    # Export-Optionen Dialog (alt)
+│       └── export_dialog_pro.py # Export-Dialog (neu, erweitert)
 │
 └── utils/                      # Hilfsfunktionen
     ├── demo_project.py        # Demo-Projekt-Generator
@@ -168,7 +191,36 @@ Im **Dashboard** (Tab 1):
 - Checkboxen zum Ein-/Ausblenden einzelner Varianten
 - Automatische Aktualisierung bei Änderungen
 
-### 6. Autosave
+### 6. Export (Professionell)
+
+**PDF-Export:**
+1. Klicken Sie auf **"Export"** in der Menüleiste
+2. Wählen Sie im erweiterten Dialog:
+   - **Dashboard**: Diagramm und/oder Tabelle
+   - **Varianten**: Checkboxen für gewünschte Varianten
+   - **Kommentare**: Button "Kommentare bearbeiten" für Varianten-Kommentare
+   - **Info-Blöcke**: Methodik, Projektbeschreibung, Ergebnisse
+   - **Bilder**: Logo (4cm x 2cm), Zusatzbild (15cm x 10cm)
+3. Klicken Sie **"Als PDF exportieren"**
+4. Wählen Sie Speicherort
+
+**Features:**
+- Header/Footer auf jeder Seite (Logo, Projektname, Seitenzahl, Disclaimer)
+- Professionelle Tabellen (graue Header, SUMMEN-Zeile, Grid)
+- Hochwertige Diagramme (200 DPI)
+- Gelbe Section-Headings (wie Excel-Tool)
+- Kommentar-Boxen pro Variante
+- Modularer Aufbau (7 Module)
+
+**Excel-Export:**
+1. Klicken Sie auf **"Export"**
+2. Wählen Sie **"Diagramme einschließen"** (optional)
+3. Klicken Sie **"Als Excel exportieren"**
+4. Wählen Sie Speicherort
+
+Details siehe **PDF_EXPORT_DOKUMENTATION.md** und **EXPORT_ANLEITUNG.md**
+
+### 7. Autosave
 
 - Automatische Speicherung **800ms** nach jeder Änderung
 - Snapshots (max. 20) im Verzeichnis `~/.abc_co2_bilanzierer/snapshots/`
@@ -230,5 +282,23 @@ Bei Fragen oder Problemen erstellen Sie bitte ein Issue im Repository.
 
 ---
 
-**Version**: 1.0.0  
+**Version**: 1.2.0  
 **Stand**: November 2024
+
+**Neu in Version 1.2.0:**
+- **Professioneller PDF-Export** komplett neu implementiert:
+  - Modulare Architektur (7 separate Module)
+  - PageTemplate mit Header/Footer auf jeder Seite
+  - Layout im Stil des Excel-Tools (gelbe Section-Headings)
+  - Professionelle Tabellen (graue Header, SUMMEN-Zeile, Grid)
+  - Hochwertige Diagramme (200 DPI, gestapelt/horizontal)
+  - Info-Blöcke (Methodik, Projektbeschreibung, Ergebnisse)
+  - Kommentar-Felder pro Variante
+  - Erweiteter Dialog mit Checkboxen für alle Optionen
+- Dokumentation: PDF_EXPORT_DOKUMENTATION.md
+
+**Neu in Version 1.1.0:**
+- PDF-Export mit professionellem Layout
+- Excel-Export mit allen Daten
+- Logo und Zusatzbilder unterstützt
+- Flexible Variantenauswahl
