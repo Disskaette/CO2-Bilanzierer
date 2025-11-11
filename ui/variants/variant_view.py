@@ -113,30 +113,35 @@ class VariantView(ctk.CTkFrame):
         # Systemgrenze aus Projekt
         project = self.orchestrator.get_current_project()
         boundary = project.system_boundary if project else "A1-A3"
+        
+        # WICHTIG: Farben NICHT neu setzen, wenn bereits vom Dashboard gesetzt!
+        # Das Dashboard setzt die Farben für ALLE sichtbaren Varianten.
+        # Wenn wir hier neu setzen würden, würden wir nur die Materialien DIESER Variante verwenden
+        # und damit andere Farben bekommen als im Dashboard!
+        if not self.orchestrator.state.material_colors:
+            # Nur wenn noch keine Farben gesetzt sind, setze sie jetzt
+            self.orchestrator.update_material_colors([self.variant_index])
 
-        # Daten sammeln
-        labels = []
-        values = []
+        # Daten sammeln - aggregiere doppelte Materialien
+        material_values = {}
 
         for row in variant.rows:
             if row.material_name:
-                labels.append(row.material_name)  # Volle Namen für Legende
-
-                # Standard-Deklaration
+                # Wert abhängig von boundary bestimmen
                 if boundary == "A1-A3":
-                    values.append(row.result_a / 1000.0)  # kg → t
+                    value = row.result_a / 1000.0  # kg → t
                 elif boundary == "A1-A3 + C3 + C4":
-                    values.append(row.result_ac / 1000.0)  # kg → t
+                    value = row.result_ac / 1000.0  # kg → t
                 elif boundary == "A1-A3 + C3 + C4 + D":
                     val = row.result_acd if row.result_acd is not None else row.result_ac
-                    values.append(val / 1000.0)  # kg → t
+                    value = val / 1000.0  # kg → t
                 # Bio-korrigierte Varianten
                 elif boundary == "A1-A3 (bio)":
                     val = row.result_a_bio if row.result_a_bio is not None else row.result_a
-                    values.append(val / 1000.0)  # kg → t
+                    value = val / 1000.0  # kg → t
                 elif boundary == "A1-A3 + C3 + C4 (bio)":
                     val = row.result_ac_bio if row.result_ac_bio is not None else row.result_ac
-                    values.append(val / 1000.0)  # kg → t
+                    value = val / 1000.0  # kg → t
                 elif boundary == "A1-A3 + C3 + C4 + D (bio)":
                     if row.result_acd_bio is not None:
                         val = row.result_acd_bio
@@ -144,9 +149,20 @@ class VariantView(ctk.CTkFrame):
                         val = row.result_acd
                     else:
                         val = row.result_ac_bio if row.result_ac_bio is not None else row.result_ac
-                    values.append(val / 1000.0)  # kg → t
+                    value = val / 1000.0  # kg → t
                 else:
-                    values.append(row.result_a / 1000.0)  # kg → t
+                    value = row.result_a / 1000.0  # kg → t
+
+                # Addiere Werte wenn Material mehrfach vorkommt
+                if row.material_name in material_values:
+                    material_values[row.material_name] += value
+                else:
+                    material_values[row.material_name] = value
+
+        # Erstelle Listen aus aggregierten Werten (ALPHABETISCH SORTIERT für konsistente Farben)
+        sorted_items = sorted(material_values.items(), key=lambda x: x[0])
+        labels = [item[0] for item in sorted_items]
+        values = [item[1] for item in sorted_items]
 
         if not values:
             text_color = 'lightgray' if is_dark else 'gray'
@@ -154,30 +170,66 @@ class VariantView(ctk.CTkFrame):
                     ha='center', va='center', color=text_color)
             ax.axis('off')
         else:
-            # Gestapeltes Balkendiagramm (VERTIKAL - Balken nach oben)
-            colors = plt.cm.tab20.colors
+            # Gestapeltes Balkendiagramm (VERTIKAL - positive oben, negative unten)
+            bottom_positive = 0  # Für positive Werte (nach oben)
+            bottom_negative = 0  # Für negative Werte (nach unten)
 
-            bottom = 0
-            for i, (label, value) in enumerate(zip(labels, values)):
-                color = colors[i % len(colors)]
-                ax.bar(
-                    0,  # X-Position (eine Säule)
-                    value,
-                    bottom=bottom,
-                    width=0.6,
-                    color=color,
-                    edgecolor='white',
-                    label=label  # Voller Name wird jetzt in Legende angezeigt
-                )
-                bottom += value
+            for label, value in zip(labels, values):
+                if value == 0:
+                    continue  # Überspringe Nullwerte
 
-            ax.set_ylabel("t CO₂-Äq.", fontsize=10)  # Tonnen statt kg
-            ax.set_title(f"{variant.name} - {boundary}", fontsize=11, pad=10)
+                # Verwende zentrale Farbzuordnung
+                color = self.orchestrator.get_material_color(label)
+
+                if value > 0:
+                    # Positive Werte von 0 nach oben stapeln
+                    ax.bar(
+                        0,  # X-Position (eine Säule)
+                        value,
+                        bottom=bottom_positive,
+                        width=0.6,
+                        color=color,
+                        edgecolor='white'
+                    )
+                    bottom_positive += value
+                else:
+                    # Negative Werte von 0 nach unten stapeln
+                    ax.bar(
+                        0,  # X-Position (eine Säule)
+                        value,
+                        bottom=bottom_negative,
+                        width=0.6,
+                        color=color,
+                        edgecolor='white'
+                    )
+                    bottom_negative += value
+
+            # Tonnen statt kg
+            ax.set_ylabel("CO2-Äquivalent [t]", fontsize=12, labelpad=10)
+            ax.set_title(f"{variant.name} - {boundary}", fontsize=12, pad=15)
             ax.set_xticks([])
             ax.set_xlim(-0.5, 0.5)
 
+            # Nulllinie prominent darstellen (wichtig für pos/neg Trennung)
+            line_color = 'white' if is_dark else 'black'
+            ax.axhline(y=0, color=line_color,
+                       linewidth=1.5, alpha=0.7, zorder=3)
+            ax.grid(axis='y', alpha=0.3)
+
+            # Legende manuell erstellen (alphabetisch sortiert für Konsistenz)
+            from matplotlib.patches import Rectangle
+            legend_handles = []
+            legend_labels = []
+            for material_name in sorted(labels):
+                color = self.orchestrator.get_material_color(material_name)
+                patch = Rectangle((0, 0), 1, 1, fc=color, edgecolor='white')
+                legend_handles.append(patch)
+                legend_labels.append(material_name)
+            
             # Legende rechts neben dem Diagramm - mit voller Breite
             legend = ax.legend(
+                legend_handles,
+                legend_labels,
                 loc='center left',
                 bbox_to_anchor=(1.02, 0.5),
                 fontsize=10,
@@ -234,8 +286,8 @@ class VariantView(ctk.CTkFrame):
         # Treeview (Tabelle)
         columns = (
             "pos", "bezeichnung", "menge", "einheit",
-            "gwp_a", "gwp_c3", "gwp_c4",
-            "result_a", "result_ac"
+            "gwp_a", "gwp_c3", "gwp_c4", "gwp_d",
+            "result_a", "result_ac", "result_acd"
         )
 
         self.tree = ttk.Treeview(
@@ -296,19 +348,23 @@ class VariantView(ctk.CTkFrame):
         self.tree.heading("gwp_a", text="GWP A1-A3")
         self.tree.heading("gwp_c3", text="GWP C3")
         self.tree.heading("gwp_c4", text="GWP C4")
+        self.tree.heading("gwp_d", text="GWP D")
         self.tree.heading("result_a", text="Ergebnis A")
-        self.tree.heading("result_ac", text="Ergebnis AC")
+        self.tree.heading("result_ac", text="Ergebnis A+C")
+        self.tree.heading("result_acd", text="Ergebnis A+C+D")
 
-        # Spaltenbreiten
-        self.tree.column("pos", width=50)
+        # Spaltenbreiten (angepasst für GWP_D)
+        self.tree.column("pos", width=10)        # Kleiner: 50→40
         self.tree.column("bezeichnung", width=250)
-        self.tree.column("menge", width=80)
-        self.tree.column("einheit", width=60)
-        self.tree.column("gwp_a", width=90)
-        self.tree.column("gwp_c3", width=80)
-        self.tree.column("gwp_c4", width=80)
-        self.tree.column("result_a", width=100)
-        self.tree.column("result_ac", width=100)
+        self.tree.column("menge", width=60)
+        self.tree.column("einheit", width=30)   # Kleiner: 60→50
+        self.tree.column("gwp_a", width=60)     # Kleiner: 90→75
+        self.tree.column("gwp_c3", width=60)    # Kleiner: 80→70
+        self.tree.column("gwp_c4", width=60)    # Kleiner: 80→70
+        self.tree.column("gwp_d", width=60)
+        self.tree.column("result_a", width=60)
+        self.tree.column("result_ac", width=60)
+        self.tree.column("result_acd", width=60)
 
         # Scrollbar (Theme-bewusst)
         scrollbar = ttk.Scrollbar(
@@ -347,16 +403,22 @@ class VariantView(ctk.CTkFrame):
 
         # Zeilen einfügen
         for row in variant.rows:
+            # GWP_D und result_acd können None sein, dann "N/A" anzeigen
+            gwp_d_display = f"{row.material_gwp_d:.2f}" if row.material_gwp_d is not None else "N/A"
+            result_acd_display = f"{row.result_acd:.2f}" if row.result_acd is not None else "N/A"
+
             values = (
                 row.position + 1,
                 row.material_name[:40] if row.material_name else "Nicht ausgewählt",
-                f"{row.quantity:.2f}",
+                f"{row.quantity:.1f}",
                 row.material_unit,
-                f"{row.material_gwp_a1a3:.3f}",
-                f"{row.material_gwp_c3:.3f}",
-                f"{row.material_gwp_c4:.3f}",
+                f"{row.material_gwp_a1a3:.2f}",  # 2 Nachkommastellen
+                f"{row.material_gwp_c3:.2f}",    # 2 Nachkommastellen
+                f"{row.material_gwp_c4:.2f}",    # 2 Nachkommastellen
+                gwp_d_display,                   # GWP_D mit 2 Nachkommastellen oder "N/A"
                 f"{row.result_a:.2f}",
-                f"{row.result_ac:.2f}"
+                f"{row.result_ac:.2f}",
+                result_acd_display                # Result ACD mit 2 Nachkommastellen oder "N/A"
             )
 
             item_id = self.tree.insert(
@@ -409,39 +471,57 @@ class VariantView(ctk.CTkFrame):
         sum_frame = ctk.CTkFrame(parent)
         sum_frame.pack(side="right", padx=10, pady=5)
 
-        # Standard-Deklaration (EN 15804+A2)
+        # Standard-Deklaration (EN 15804+A2) - Schlanke Beschriftung
         sum_a_label = ctk.CTkLabel(
             sum_frame,
-            text=f"Σ A1-A3: {variant.sum_a / 1000.0:.2f} t CO₂-Äq.",
+            text=f"Σ A: {variant.sum_a / 1000.0:.2f} t",
             font=ctk.CTkFont(size=12, weight="bold")
         )
-        sum_a_label.pack(side="left", padx=10)
+        sum_a_label.pack(side="left", padx=8)
 
         sum_ac_label = ctk.CTkLabel(
             sum_frame,
-            text=f"Σ A1-A3+C3+C4: {variant.sum_ac / 1000.0:.2f} t CO₂-Äq.",
+            text=f"Σ A+C: {variant.sum_ac / 1000.0:.2f} t",
             font=ctk.CTkFont(size=12, weight="bold")
         )
-        sum_ac_label.pack(side="left", padx=10)
+        sum_ac_label.pack(side="left", padx=8)
+
+        # ACD-Summe (falls vorhanden)
+        if variant.sum_acd is not None:
+            sum_acd_label = ctk.CTkLabel(
+                sum_frame,
+                text=f"Σ A+C+D: {variant.sum_acd / 1000.0:.2f} t",
+                font=ctk.CTkFont(size=12, weight="bold")
+            )
+            sum_acd_label.pack(side="left", padx=8)
 
         # Bio-korrigierte Werte (falls vorhanden)
         if variant.sum_a_bio is not None:
             sum_a_bio_label = ctk.CTkLabel(
                 sum_frame,
-                text=f"Σ A1-A3 (bio): {variant.sum_a_bio / 1000.0:.2f} t CO₂-Äq.",
+                text=f"Σ A (bio): {variant.sum_a_bio / 1000.0:.2f} t",
                 font=ctk.CTkFont(size=12, weight="bold"),
                 text_color="lightgreen"
             )
-            sum_a_bio_label.pack(side="left", padx=10)
+            sum_a_bio_label.pack(side="left", padx=8)
 
         if variant.sum_ac_bio is not None:
             sum_ac_bio_label = ctk.CTkLabel(
                 sum_frame,
-                text=f"Σ A1-A3+C3+C4 (bio): {variant.sum_ac_bio / 1000.0:.2f} t CO₂-Äq.",
+                text=f"Σ A+C (bio): {variant.sum_ac_bio / 1000.0:.2f} t",
                 font=ctk.CTkFont(size=12, weight="bold"),
                 text_color="lightgreen"
             )
-            sum_ac_bio_label.pack(side="left", padx=10)
+            sum_ac_bio_label.pack(side="left", padx=8)
+
+        if variant.sum_acd_bio is not None:
+            sum_acd_bio_label = ctk.CTkLabel(
+                sum_frame,
+                text=f"Σ A+C+D (bio): {variant.sum_acd_bio / 1000.0:.2f} t",
+                font=ctk.CTkFont(size=12, weight="bold"),
+                text_color="lightgreen"
+            )
+            sum_acd_bio_label.pack(side="left", padx=8)
 
     def refresh_chart(self) -> None:
         """Aktualisiert nur das Diagramm"""

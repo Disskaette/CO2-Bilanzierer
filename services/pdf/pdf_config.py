@@ -14,7 +14,7 @@ from typing import Optional, List, Dict
 class InfoBlock:
     """
     Info-Block für das PDF (z.B. Methodik, Projektbeschreibung)
-    
+
     Attributes:
         id: Eindeutige ID des Blocks (z.B. "methodik", "projektbeschreibung")
         title: Überschrift des Blocks
@@ -27,7 +27,7 @@ class InfoBlock:
     text: str
     image_path: Optional[str] = None
     include: bool = True
-    
+
     def copy(self) -> 'InfoBlock':
         """Erstellt eine Kopie des Info-Blocks"""
         return InfoBlock(
@@ -43,54 +43,55 @@ class InfoBlock:
 class ExportConfig:
     """
     Konfiguration für den PDF-Export
-    
+
     Definiert alle Optionen, die im Export-Dialog ausgewählt werden können.
     """
-    
+
     # ===== LOGO =====
     logo_path: Optional[str] = None
-    
+
     # ===== DASHBOARD =====
     include_dashboard: bool = True
     include_dashboard_chart: bool = True
     include_dashboard_table: bool = True
-    
+
     # ===== VARIANTEN =====
     # Liste der Varianten-Indizes, die exportiert werden sollen
     include_variants: List[int] = field(default_factory=list)
     include_variant_charts: bool = True
     include_variant_tables: bool = True
-    
+
     # ===== KOMMENTARE =====
     # Dictionary: variant_index -> Kommentar-Text
     # Kommentare werden als Text-Block unter der Varianten-Überschrift eingefügt
     comments: Dict[int, str] = field(default_factory=dict)
-    
+
     # ===== INFO-BLÖCKE =====
     # Liste von Info-Blöcken (Methodik, Projektbeschreibung, etc.)
     # Diese werden am Anfang oder Ende des PDFs eingefügt
     info_blocks: List[InfoBlock] = field(default_factory=list)
-    
+
     # ===== ZUSATZBILD =====
     # Optionales Bild am Ende des PDFs
     additional_image_path: Optional[str] = None
-    
+
     # ===== FOOTER-TEXT =====
     # Disclaimer/Hinweis in der Fußzeile
     disclaimer: str = "Berechnungen auf Basis von DIN EN 15804+A2 und ISO 14025. Ergebnisse dienen als grobe Einschätzung."
-    
+
     def get_selected_variant_count(self) -> int:
         """Gibt Anzahl der ausgewählten Varianten zurück"""
         return len(self.include_variants)
-    
+
     def is_variant_selected(self, index: int) -> bool:
         """Prüft, ob eine Variante ausgewählt ist"""
         return index in self.include_variants
-    
+
     def add_info_block(self, info_block: InfoBlock):
         """Fügt einen Info-Block hinzu"""
         # Prüfe, ob Block mit dieser ID bereits existiert
-        existing = next((ib for ib in self.info_blocks if ib.id == info_block.id), None)
+        existing = next(
+            (ib for ib in self.info_blocks if ib.id == info_block.id), None)
         if existing:
             # Ersetze bestehenden Block
             idx = self.info_blocks.index(existing)
@@ -98,11 +99,11 @@ class ExportConfig:
         else:
             # Füge neuen Block hinzu
             self.info_blocks.append(info_block)
-    
+
     def remove_info_block(self, block_id: str):
         """Entfernt einen Info-Block"""
         self.info_blocks = [ib for ib in self.info_blocks if ib.id != block_id]
-    
+
     def get_info_block(self, block_id: str) -> Optional[InfoBlock]:
         """Holt einen Info-Block nach ID"""
         return next((ib for ib in self.info_blocks if ib.id == block_id), None)
@@ -124,26 +125,27 @@ PREDEFINED_INFO_BLOCKS = {
         image_path=None,
         include=False  # Standardmäßig nicht inkludiert
     ),
-    
+
     "projektbeschreibung": InfoBlock(
         id="projektbeschreibung",
         title="Projektbeschreibung",
         text=(
             "Dieses Dokument enthaelt die CO2-Bilanzierung fuer das Projekt. "
-            "Es werden verschiedene Bauwerksvarianten verglichen und die Materialzusammensetzung analysiert. "
-            "Ziel ist es, die umweltfreundlichste Variante zu identifizieren."
+            "Es werden verschiedene Bauwerksvarianten oder Bauwerke verglichen und die Materialzusammensetzung analysiert. "
+            "Ziel ist es, eine grobe Einschätzung der umweltfreundlichsten Variante zu identifizieren."
         ),
         image_path=None,
         include=False
     ),
-    
+
     "ergebnisse": InfoBlock(
         id="ergebnisse",
         title="Zusammenfassung der Ergebnisse",
         text=(
-            "Die Ergebnisse zeigen die CO2-Emissionen der verschiedenen Bauwerksvarianten. "
+            "Die Ergebnisse zeigen die CO2-Emissionen der verschiedenen Bauwerksvarianten oder Bauwerke. "
             "Die Variante mit den geringsten Emissionen sollte bevorzugt werden, "
             "sofern keine anderen Faktoren dagegen sprechen."
+            "Jedoch sollte ebenfalls auf Ausführbarkeit und Kosten geachtet werden."
         ),
         image_path=None,
         include=False
@@ -154,7 +156,7 @@ PREDEFINED_INFO_BLOCKS = {
 def create_default_config() -> ExportConfig:
     """
     Erstellt eine Standard-Konfiguration
-    
+
     Returns:
         ExportConfig mit sinnvollen Defaults
     """
@@ -165,5 +167,5 @@ def create_default_config() -> ExportConfig:
         include_variant_charts=True,
         include_variant_tables=True
     )
-    
+
     return config

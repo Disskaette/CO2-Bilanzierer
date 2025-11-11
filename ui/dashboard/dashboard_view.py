@@ -173,7 +173,11 @@ class DashboardView(ctk.CTkFrame):
             ax.set_ylim(0, 1)
             ax.axis('off')
         else:
-            self._plot_comparison(ax, project)
+            self._plot_comparison(ax, project, is_dark)
+
+            ax.set_ylabel('CO2-Äquivalent [t]', fontsize=14)
+            ax.set_title('CO2-Bilanzierung - Variantenvergleich',
+                         fontweight='bold', fontsize=15, pad=15)
         # Canvas erstellen
         self.canvas = FigureCanvasTkAgg(self.figure, plot_frame)
         self.canvas.draw()
@@ -183,41 +187,42 @@ class DashboardView(ctk.CTkFrame):
         if project and project.variants:
             self._create_material_table(chart_container, project)
 
-    def _plot_comparison(self, ax, project) -> None:
+    def _plot_comparison(self, ax, project, is_dark: bool = False) -> None:
         """
         Zeichnet Vergleichsdiagramm mit konsistenten Farben und Legende
 
         Args:
             ax: Matplotlib Axes
             project: Project-Objekt
-            fig_height: Höhe der Figure in Zoll
+            is_dark: Dark Mode aktiv
         """
 
-        # 1. Alle Materialien NUR über SICHTBARE Varianten sammeln
+        # 1. Sichtbare Varianten-Indices sammeln
+        visible_indices = [
+            i for i in range(len(project.variants))
+            if i < len(self.visibility_vars) and self.visibility_vars[i].get()
+        ]
+        
+        # 2. Zentrale Farbzuordnung aktualisieren
+        self.orchestrator.update_material_colors(visible_indices)
+        
+        # 3. Alle Materialien über sichtbare Varianten sammeln (für num_materials)
         all_materials = set()
-        for i, variant in enumerate(project.variants):
-            # Nur sichtbare Varianten berücksichtigen
-            if i < len(self.visibility_vars) and self.visibility_vars[i].get():
-                for row in variant.rows:
-                    if row.material_name:
-                        all_materials.add(row.material_name)
+        for i in visible_indices:
+            for row in project.variants[i].rows:
+                if row.material_name:
+                    all_materials.add(row.material_name)
 
         num_materials = len(all_materials)
 
-        # 2. Farben zuweisen (konsistent über alle Varianten)
-        material_colors = {}
-        colors = plt.cm.tab20.colors
-        for idx, material in enumerate(sorted(all_materials)):
-            material_colors[material] = colors[idx % len(colors)]
-
-        # 3. Varianten sammeln
+        # 3. Varianten sammeln - nur tatsächlich vorhandene Materialien
         variant_names = []
         variant_data = []  # Liste von Dictionaries {material_name: value}
 
         for i, variant in enumerate(project.variants):
+            # Nur sichtbare Varianten berücksichtigen
             if i < len(self.visibility_vars) and self.visibility_vars[i].get():
                 variant_names.append(variant.name)
-
                 # Materialwerte sammeln (nach Systemgrenze)
                 material_values = {}
                 for row in variant.rows:
@@ -225,7 +230,11 @@ class DashboardView(ctk.CTkFrame):
                         val = self._get_value_for_boundary(
                             row, project.system_boundary)
                         # kg → t
-                        material_values[row.material_name] = val / 1000.0
+                        # WICHTIG: Addiere Werte wenn Material mehrfach vorkommt
+                        if row.material_name in material_values:
+                            material_values[row.material_name] += val / 1000.0
+                        else:
+                            material_values[row.material_name] = val / 1000.0
 
                 variant_data.append(material_values)
 
@@ -243,22 +252,40 @@ class DashboardView(ctk.CTkFrame):
         # 4. Gestapeltes Balkendiagramm mit konsistenten Farben
         x_pos = range(len(variant_names))
 
-        # Für jede Variante (OHNE Labels, werden manuell hinzugefügt)
+        # Für jede Variante: Iteriere durch ALLE Materialien (sortiert) für Konsistenz
         for idx, (name, material_values) in enumerate(zip(variant_names, variant_data)):
-            bottom = 0
-            for material_name in sorted(material_values.keys()):
-                value = material_values[material_name]
-                color = material_colors[material_name]
-                ax.bar(
-                    idx,
-                    value,
-                    bottom=bottom,
-                    color=color,
-                    edgecolor='white',
-                    linewidth=0.5,
-                    width=0.6  # Schmälere Balken
-                )
-                bottom += value
+            bottom_positive = 0  # Für positive Werte
+            bottom_negative = 0  # Für negative Werte
+            # WICHTIG: Iteriere durch ALLE Materialien in sortierter Reihenfolge
+            for material_name in sorted(all_materials):
+                # Hole Wert (0 wenn nicht vorhanden)
+                value = material_values.get(material_name, 0.0)
+                if value != 0:  # Zeichne positive UND negative Werte
+                    color = self.orchestrator.get_material_color(material_name)
+                    if value > 0:
+                        # Positive Werte von unten nach oben stapeln
+                        ax.bar(
+                            idx,
+                            value,
+                            bottom=bottom_positive,
+                            color=color,
+                            edgecolor='white',
+                            linewidth=0.5,
+                            width=0.6
+                        )
+                        bottom_positive += value
+                    else:
+                        # Negative Werte von oben nach unten stapeln
+                        ax.bar(
+                            idx,
+                            value,
+                            bottom=bottom_negative,
+                            color=color,
+                            edgecolor='white',
+                            linewidth=0.5,
+                            width=0.6
+                        )
+                        bottom_negative += value
 
         # 5. Achsenbeschriftung mit dynamischer Rotation
         ax.set_xticks(x_pos)
@@ -275,10 +302,16 @@ class DashboardView(ctk.CTkFrame):
             rotation = 0
             ha = 'center'
 
-        ax.set_xticklabels(variant_names, fontsize=10,
+        ax.set_xticklabels(variant_names, fontsize=12,
                            rotation=rotation, ha=ha)
-        ax.set_ylabel("t CO₂-Äq.")
-        ax.set_title(f"Variantenvergleich - {project.system_boundary}")
+        ax.set_ylabel("CO2-Äquivalent [t]", fontsize=12, labelpad=8)
+        ax.set_title(
+            f"Variantenvergleich - {project.system_boundary}", fontsize=12, pad=25)
+
+        # Y-Achse muss 0 enthalten und beide Bereiche (positiv/negativ) zeigen
+        # Nulllinie prominent darstellen (Theme-bewusst)
+        line_color = 'white' if is_dark else 'black'
+        ax.axhline(y=0, color=line_color, linewidth=1.5, alpha=0.7, zorder=3)
         ax.grid(axis='y', alpha=0.3)
 
         # 6. Legende VERTIKAL rechts neben dem Diagramm (zentriert)
@@ -289,7 +322,7 @@ class DashboardView(ctk.CTkFrame):
             legend_handles = []
             legend_labels = []
             for material_name in sorted(all_materials):
-                color = material_colors[material_name]
+                color = self.orchestrator.get_material_color(material_name)
                 patch = Rectangle((0, 0), 1, 1, fc=color, edgecolor='white')
                 legend_handles.append(patch)
                 # Kürze zu lange Namen für bessere Lesbarkeit
@@ -346,21 +379,21 @@ class DashboardView(ctk.CTkFrame):
 
         if rotated:
             base_margin = 0.05        # Grundabstand
-            char_factor = 0.0085      # zusätzlicher Abstand pro Zeichen
+            char_factor = 0.013      # zusätzlicher Abstand pro Zeichen
             bottom_min = base_margin + (max_label_length * char_factor)
             bottom_min = min(max(bottom_min, 0.15), 0.35)
-            height_per_material = 0.11
+            height_per_material = 0.08
         else:
             bottom_min = 0.12
             height_per_material = 0.051
 
         # 8.3 Referenz-Diagrammhöhe (in "physisch" gedacht)
-        base_fig_height = 5.0        # Referenz-Figurehöhe in Zoll
-        base_axis_rel = 0.70         # 70 % der Figure für das Diagramm
+        base_fig_height = 5.5        # Referenz-Figurehöhe in Zoll
+        base_axis_rel = 0.65         # 70 % der Figure für das Diagramm
         base_axis_height_inch = base_axis_rel * base_fig_height
 
         # 8.4 Figurehöhe dynamisch abhängig von Materialien (für lange Legende)
-        threshold = 10               # ab hier typischerweise viele Legendeneinträge
+        threshold = 20               # ab hier typischerweise viele Legendeneinträge
         # Zusatzhöhe pro Material über threshold (Zoll)
         max_fig_height = 10.0        # harte Obergrenze
 

@@ -45,6 +45,16 @@ class Application:
         # Temporäres Root-Window für WelcomeWindow
         self.temp_root = ctk.CTk()
         self.temp_root.withdraw()  # Komplett verstecken
+        
+        # Tcl/Tk Error-Handler für harmlose Fehler beim Beenden
+        def report_callback_exception(exc_type, exc_value, exc_tb):
+            # Ignoriere "invalid command name" Fehler beim Beenden
+            if "invalid command name" in str(exc_value):
+                return
+            # Andere Fehler normal loggen
+            self.logger.error(f"Tcl/Tk Fehler: {exc_value}", exc_info=(exc_type, exc_value, exc_tb))
+        
+        self.temp_root.report_callback_exception = report_callback_exception
 
         # Main-Window (wird später erstellt und ist dann das echte Root)
         self.main_window = None
@@ -114,6 +124,16 @@ class Application:
         # Main-Window als neues Root erstellen
         if not self.main_window:
             self.main_window = MainWindow(self.orchestrator)
+            
+            # Tcl/Tk Error-Handler auch für main_window setzen
+            def report_callback_exception(exc_type, exc_value, exc_tb):
+                # Ignoriere "invalid command name" Fehler beim Beenden
+                if "invalid command name" in str(exc_value):
+                    return
+                # Andere Fehler normal loggen
+                self.logger.error(f"Tcl/Tk Fehler: {exc_value}", exc_info=(exc_type, exc_value, exc_tb))
+            
+            self.main_window.report_callback_exception = report_callback_exception
 
         self.logger.info("Main-Window angezeigt")
 
@@ -155,19 +175,44 @@ class Application:
         except Exception as e:
             self.logger.error(f"Fehler in Hauptschleife: {e}", exc_info=True)
         finally:
-            self._cleanup()
+            # Unterdrücke Tcl/Tk Fehler beim Beenden
+            from io import StringIO
+            old_stderr = sys.stderr
+            try:
+                sys.stderr = StringIO()  # Unterdrücke stderr temporär
+                self._cleanup()
+            finally:
+                sys.stderr = old_stderr
 
     def _cleanup(self) -> None:
         """Cleanup beim Beenden"""
         self.logger.info("Cleanup...")
 
-        # Konfiguration speichern
-        self.orchestrator.save_config()
+        try:
+            # Konfiguration speichern
+            self.orchestrator.save_config()
 
-        # Aktuelles Projekt speichern
-        if self.orchestrator.state.current_project:
-            self.orchestrator.save_project()
+            # Aktuelles Projekt speichern
+            if self.orchestrator.state.current_project:
+                self.orchestrator.save_project()
 
+            # WICHTIG: Alle geplanten Callbacks abbrechen BEVOR Widgets zerstört werden
+            if self.main_window:
+                try:
+                    # Hole alle after-IDs
+                    after_ids = self.main_window.tk.call('after', 'info')
+                    # Breche jeden einzeln ab
+                    for after_id in after_ids:
+                        try:
+                            self.main_window.after_cancel(after_id)
+                        except:
+                            pass
+                except:
+                    pass
+
+        except Exception as e:
+            self.logger.error(f"Fehler beim Cleanup: {e}")
+        
         self.logger.info("Programm beendet")
 
 

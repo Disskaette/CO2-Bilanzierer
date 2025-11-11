@@ -23,6 +23,7 @@ chardet==5.2.0  # Automatische Encoding-Erkennung für CSV (Umlaute)
 # PDF & Excel Export
 reportlab==4.4.4
 pillow==10.4.0
+svglib==1.5.1  # SVG-Unterstützung für PDFs
 openpyxl==3.1.5
 
 # Installation:

@@ -26,6 +26,7 @@ class StateStore:
         self.open_tabs: List[int] = [0]  # Tab-Indices
         self.active_tab: int = 0
         self.ui_callbacks: Dict[str, List[Callable]] = {}
+        self.material_colors: Dict[str, tuple] = {}  # Zentrale Farbzuordnung für Materialien
     
     def register_callback(self, event: str, callback: Callable) -> None:
         """Registriert UI-Callback"""
@@ -576,6 +577,47 @@ class AppOrchestrator:
     # ========================================================================
     # EXPORT
     # ========================================================================
+    
+    def update_material_colors(self, visible_variant_indices: Optional[List[int]] = None) -> None:
+        """
+        Aktualisiert die zentrale Materialfarb-Zuordnung basierend auf sichtbaren Varianten
+        
+        Args:
+            visible_variant_indices: Liste der sichtbaren Varianten-Indices (None = alle)
+        """
+        import matplotlib.pyplot as plt
+        
+        project = self.state.current_project
+        if not project or not project.variants:
+            return
+        
+        # Sammle alle Materialien aus sichtbaren Varianten
+        all_materials = set()
+        for i, variant in enumerate(project.variants):
+            if visible_variant_indices is None or i in visible_variant_indices:
+                for row in variant.rows:
+                    if row.material_name:
+                        all_materials.add(row.material_name)
+        
+        # Farben zuweisen (konsistent über alle Diagramme)
+        colors = plt.cm.tab20.colors
+        self.state.material_colors.clear()
+        sorted_materials = sorted(all_materials)
+        for idx, material in enumerate(sorted_materials):
+            self.state.material_colors[material] = colors[idx % len(colors)]
+    
+    def get_material_color(self, material_name: str) -> tuple:
+        """
+        Gibt die Farbe für ein Material zurück
+        
+        Args:
+            material_name: Name des Materials
+            
+        Returns:
+            RGB-Tupel (0-1) oder Standardfarbe
+        """
+        import matplotlib.pyplot as plt
+        return self.state.material_colors.get(material_name, plt.cm.tab20.colors[0])
     
     def export_pdf(
         self,

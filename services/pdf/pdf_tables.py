@@ -124,7 +124,7 @@ class PDFTableCreator:
             # Header
             data = [['Pos', 'Material', 'Menge', 'Einheit', 'CO2 [t]']]
             
-            MAX_NAME_LENGTH = 90  # Maximale Länge für Material-Namen in Tabelle (1,8x Dashboard)
+            MAX_NAME_LENGTH = 50  # Maximale Länge für Material-Namen in Tabelle
             
             # Daten
             for i, row in enumerate(variant.rows, 1):
