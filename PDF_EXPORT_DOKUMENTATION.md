@@ -33,9 +33,12 @@ services/pdf/
 - Styles: ProjectTitle, SectionHeading, BodyText, Comment, Metadata, Disclaimer
 
 #### 3. **pdf_charts.py** - Diagramm-Erstellung
-- `PDFChartCreator`: Erstellt Matplotlib-Diagramme
+- `PDFChartCreator`: Erstellt Matplotlib-Diagramme (mit Orchestrator für konsistente Farben)
 - `create_dashboard_chart()`: Gestapeltes Balkendiagramm
 - `create_variant_chart()`: Horizontales Balkendiagramm
+- **Zentrale Farbverwaltung**: Farben werden vom Orchestrator bezogen (identisch mit GUI)
+- **Alphabetische Sortierung**: Materialien werden alphabetisch sortiert für konsistente Farbzuordnung
+- **Manuelle Legenden**: Legenden werden manuell erstellt (keine automatischen Matplotlib-Legenden)
 - Hohe DPI-Qualität (200 DPI)
 
 #### 4. **pdf_tables.py** - Tabellen-Erstellung
@@ -211,6 +214,38 @@ Aufruf über: **Menü → Export**
 - Grid (X-Achse, gestrichelt, 30% Transparenz)
 - Größe: 14cm x 9cm
 - DPI: 200
+
+### Konsistente Farbverwaltung (Version 2.0)
+
+**Problem gelöst**: Materialien hatten zuvor unterschiedliche Farben in Dashboard, Varianten-GUI und PDF-Export.
+
+**Lösung**: Zentrale Farbverwaltung im Orchestrator
+
+**Funktionsweise:**
+1. **Dashboard als "Source of Truth"**:
+   - Dashboard aktualisiert beim Rendern die zentrale Farbzuordnung (`orchestrator.update_material_colors()`)
+   - Berücksichtigt ALLE sichtbaren Varianten
+   - Materialien werden alphabetisch sortiert
+   - Jedem Material wird konsistent eine Farbe aus `plt.cm.tab20.colors` zugewiesen
+
+2. **Varianten-GUI nutzt zentrale Farben**:
+   - Ruft `orchestrator.get_material_color(material_name)` auf
+   - Überschreibt KEINE Farben (falls bereits vom Dashboard gesetzt)
+   - Manuelle Legende-Erstellung (alphabetisch sortiert)
+
+3. **PDF-Export identisch**:
+   - `PDFChartCreator` erhält Orchestrator-Instanz
+   - Nutzt gleiche Farb-API wie GUI
+   - Materialien werden alphabetisch sortiert
+   - Manuelle Legende-Erstellung
+
+**Wichtig**: Der Orchestrator wird beim PDF-Export übergeben:
+```python
+exporter = PDFExporterPro()
+success = exporter.export(project, config, filepath, orchestrator=self.orchestrator)
+```
+
+**Ergebnis**: Identische Farben in allen Ansichten (Dashboard, Varianten, PDF)
 
 ## Export-Dialog Optionen
 

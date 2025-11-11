@@ -1,5 +1,5 @@
 """
-ABC-CO₂-Bilanzierer
+CO₂-Bilanzierer
 Haupteinstiegspunkt der Anwendung
 
 Ökobilanzierung nach ABC-Entwurfstafeln (Stand 2024-02)
@@ -19,6 +19,7 @@ import customtkinter as ctk
 from core.orchestrator import AppOrchestrator
 from ui.welcome_window import WelcomeWindow
 from ui.main_window import MainWindow
+from ui.splash_screen import SplashScreen
 from utils.logging_config import setup_logging
 from utils.demo_project import create_demo_project
 
@@ -29,20 +30,17 @@ class Application:
     Verwaltet Welcome-Window → Main-Window Übergang
     """
 
-    VERSION = "0.1"
+    VERSION = "2.0"
 
     def __init__(self):
-        # Orchestrator initialisieren
+        # Orchestrator und Logging ZUERST initialisieren (bevor GUI)
         self.orchestrator = AppOrchestrator()
-
-        # Logging einrichten
         log_path = Path(self.orchestrator.get_log_path())
         setup_logging(log_path)
-
         self.logger = logging.getLogger(__name__)
         self.logger.info(f"CO₂-Bilanzierer v{self.VERSION} gestartet")
-
-        # Temporäres Root-Window für WelcomeWindow
+        
+        # Temporäres Root-Window erstellen
         self.temp_root = ctk.CTk()
         self.temp_root.withdraw()  # Komplett verstecken
         
@@ -55,18 +53,29 @@ class Application:
             self.logger.error(f"Tcl/Tk Fehler: {exc_value}", exc_info=(exc_type, exc_value, exc_tb))
         
         self.temp_root.report_callback_exception = report_callback_exception
-
+        
         # Main-Window (wird später erstellt und ist dann das echte Root)
         self.main_window = None
+        
+        # Splash Screen anzeigen
+        self.splash = SplashScreen(self.temp_root, version=self.VERSION)
+        
+        # Initialisierung nach kurzer Verzögerung (damit Splash Screen sichtbar wird)
+        self.temp_root.after(100, self._initialize)
 
+    def _initialize(self):
+        """Lädt Daten mit Splash-Screen Status-Updates"""
+        
         # Standard-CSV laden
+        self.splash.update_status("Lade CSV-Datenbank...")
         self._load_default_csv()
 
         # Demo-Projekt laden oder erstellen
+        self.splash.update_status("Lade Projekt...")
         self._load_or_create_demo_project()
 
-        # Welcome-Window anzeigen (nach kurzer Verzögerung für GUI-Init)
-        self.temp_root.after(100, self._show_welcome)
+        # Splash Screen schließen und Welcome-Window anzeigen
+        self.temp_root.after(500, self._finish_startup)
 
     def _load_or_create_demo_project(self) -> None:
         """Lädt letztes Projekt oder erstellt Demo-Projekt"""
@@ -85,6 +94,11 @@ class Application:
             self.orchestrator.save_project()
 
             self.logger.info(f"Demo-Projekt erstellt: {demo_project.name}")
+
+    def _finish_startup(self):
+        """Beendet Startup-Prozess"""
+        self.splash.close()
+        self._show_welcome()
 
     def _load_default_csv(self) -> None:
         """Lädt Standard-CSV aus dem Data-Ordner, falls vorhanden"""
@@ -124,15 +138,16 @@ class Application:
         # Main-Window als neues Root erstellen
         if not self.main_window:
             self.main_window = MainWindow(self.orchestrator)
-            
+
             # Tcl/Tk Error-Handler auch für main_window setzen
             def report_callback_exception(exc_type, exc_value, exc_tb):
                 # Ignoriere "invalid command name" Fehler beim Beenden
                 if "invalid command name" in str(exc_value):
                     return
                 # Andere Fehler normal loggen
-                self.logger.error(f"Tcl/Tk Fehler: {exc_value}", exc_info=(exc_type, exc_value, exc_tb))
-            
+                self.logger.error(
+                    f"Tcl/Tk Fehler: {exc_value}", exc_info=(exc_type, exc_value, exc_tb))
+
             self.main_window.report_callback_exception = report_callback_exception
 
         self.logger.info("Main-Window angezeigt")
@@ -212,7 +227,7 @@ class Application:
 
         except Exception as e:
             self.logger.error(f"Fehler beim Cleanup: {e}")
-        
+
         self.logger.info("Programm beendet")
 
 

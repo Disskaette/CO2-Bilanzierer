@@ -1,30 +1,40 @@
-# ABC-CO₂-Bilanzierer - Dependencies
-# Version: 1.1.0
+# CO₂-Bilanzierer - Dependencies
+# Version: 2.0
 # Python: >= 3.9
 #
-# Neue Features in 1.1.0:
-# - Favoriten-Persistierung (config.json)
-# - Custom Materials (eigene EPDs)
-# - EN 15804+A2 Filter
-# - 6 Systemgrenzen (inkl. bio-korrigiert)
-# - Konsistente Dashboard-Farben & Legenden
-# - Material-Übersichtstabellen (2x2 Grid)
+# Neue Features in 2.0:
+# - Professioneller PDF-Export komplett neu implementiert (7 Module)
+# - Zentrale Farbverwaltung für konsistente Darstellung
+# - Alphabetische Material-Sortierung in Legenden
+# - Manuelle Legenden-Erstellung (Dashboard, Varianten, PDF)
+# - Info-Blöcke, Kommentarfelder, Logo-Unterstützung
+# - PageTemplate mit Header/Footer auf jeder Seite
+# - Hochwertige Diagramme (200 DPI)
 
 # GUI Framework
 customtkinter==5.2.1
+# Hinweis: tkinter ist Teil der Python-Standardbibliothek
 
 # Diagramme & Visualisierung
 matplotlib==3.8.2
+numpy==1.26.2  # Benötigt von matplotlib
 
-# Datenverarbeitung (CSV-Parsing & numerische Berechnungen)
-numpy==1.26.2
-chardet==5.2.0  # Automatische Encoding-Erkennung für CSV (Umlaute)
+# PDF-Export
+reportlab==4.4.4  # PDF-Generierung (Layout, Tabellen, Styles)
+pillow==10.4.0    # Bildverarbeitung (Logos, Zusatzbilder)
 
-# PDF & Excel Export
-reportlab==4.4.4
-pillow==10.4.0
-svglib==1.5.1  # SVG-Unterstützung für PDFs
-openpyxl==3.1.5
+# Excel-Export
+openpyxl==3.1.5   # .xlsx-Dateien erstellen
+
+# Hinweis: Folgende Bibliotheken aus Python-Standardbibliothek werden verwendet:
+# - csv (CSV-Parsing)
+# - json (Persistierung)
+# - pathlib, os (Dateiverwaltung)
+# - logging (Logging)
+# - datetime (Zeitstempel)
+# - threading (Autosave)
+# - collections (Counter)
+# - io (StringIO, BytesIO)
 
 # Installation:
 # pip install -r requirements.txt

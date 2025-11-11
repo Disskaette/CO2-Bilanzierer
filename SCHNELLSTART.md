@@ -1,4 +1,4 @@
-# ABC-CO₂-Bilanzierer - Schnellstart
+# CO₂-Bilanzierer - Schnellstart
 
 ## 🚀 Installation & Start (5 Minuten)
 

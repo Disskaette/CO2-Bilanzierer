@@ -12,7 +12,7 @@ def build_app():
     """Erstellt macOS .app mit PyInstaller"""
     
     print("=" * 60)
-    print("ABC-CO₂-Bilanzierer - App Builder")
+    print("CO₂-Bilanzierer - App Builder")
     print("=" * 60)
     
     # 1. PyInstaller installieren (falls nicht vorhanden)
@@ -74,6 +74,7 @@ a = Analysis(
     binaries=[],
     datas=[
         ('data/OBD_Datenbank.csv', 'data'),
+        ('services/pdf/Logos', 'services/pdf/Logos'),
         ('README.md', '.'),
     ],
     hiddenimports=[
@@ -131,10 +132,10 @@ app = BUNDLE(
     info_plist={
         'NSPrincipalClass': 'NSApplication',
         'NSHighResolutionCapable': 'True',
-        'CFBundleName': 'ABC-CO₂-Bilanzierer',
-        'CFBundleDisplayName': 'ABC-CO₂-Bilanzierer',
-        'CFBundleVersion': '1.1.0',
-        'CFBundleShortVersionString': '1.1.0',
+        'CFBundleName': 'CO₂-Bilanzierer',
+        'CFBundleDisplayName': 'CO₂-Bilanzierer',
+        'CFBundleVersion': '2.0',
+        'CFBundleShortVersionString': '2.0',
     },
 )
 '''

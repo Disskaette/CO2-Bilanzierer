@@ -1,4 +1,7 @@
-# ABC-CO₂-Bilanzierer - App erstellen
+# CO₂-Bilanzierer - App erstellen
+
+**Version**: 2.0  
+**Letzte Aktualisierung**: November 2024
 
 ## 🚀 Schnelle Methode: Automatischer Build
 
@@ -42,10 +45,11 @@ Das Script:
 
 PyInstaller erstellt eine **eigenständige macOS App**, die:
 - ✅ **Ohne Python-Installation läuft**
-- ✅ **Alle Dependencies enthält** (CustomTkinter, Matplotlib, etc.)
+- ✅ **Alle Dependencies enthält** (CustomTkinter, Matplotlib, ReportLab, etc.)
 - ✅ **Per Doppelklick startet**
 - ✅ **Kein Terminal-Fenster öffnet**
 - ✅ **Im Programme-Ordner installierbar ist**
+- ✅ **3 Logos inkludiert** (für professionellen PDF-Export)
 
 ---
 
@@ -188,14 +192,26 @@ icon='icon.icns',  # Stelle sicher, dass die Datei existiert
 
 ### App-Größe reduzieren
 
-Die App ist ~150-200 MB groß (wegen Matplotlib & NumPy). Das ist normal!
+Die App ist ~150-200 MB groß (wegen Matplotlib, NumPy & ReportLab). Das ist normal!
+
+**Inkludierte Dateien:**
+- OBD_Datenbank.csv (Materialdatenbank)
+- 3 Logos für PDF-Export (Hochschule Karlsruhe, Zimmerei Stark, merz kley partner)
+- README.md
 
 ### Updates verteilen
 
 Bei neuen Versionen:
 1. Code aktualisieren
-2. `python3 build_app.py` erneut ausführen
-3. Neue App verteilen
+2. Version in `build_app.py` erhöhen (aktuell: 2.0)
+3. `python3 build_app.py` erneut ausführen
+4. Neue App verteilen
+
+**Version 2.0 Features:**
+- ✨ Professioneller PDF-Export (7 Module)
+- ✨ Konsistente Material-Farben (Dashboard, Varianten, PDF)
+- ✨ Info-Blöcke, Kommentarfelder, Logo-Unterstützung
+- ✨ Zentrale Farbverwaltung im Orchestrator
 
 ### Für andere weitergeben
 

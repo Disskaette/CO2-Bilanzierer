@@ -1,4 +1,4 @@
-# ABC-CO₂-Bilanzierer - Architekturübersicht
+# CO₂-Bilanzierer - Architekturübersicht
 
 ## 1. Schichtenarchitektur
 
@@ -55,6 +55,11 @@
 - Stellt API für UI bereit
 - Verwaltet StateStore (Events)
 - Implementiert Autosave mit Debounce (800ms)
+- **Zentrale Farbverwaltung** (`material_colors` Dictionary):
+  - `update_material_colors(variant_indices)`: Aktualisiert Farben basierend auf sichtbaren Varianten
+  - `get_material_color(material_name)`: Gibt konsistente Farbe für Material zurück
+  - Alphabetische Sortierung für konsistente Farbzuordnung
+  - Verwendet `plt.cm.tab20.colors` (20 Farben)
 
 **StateStore** - Event-System
 ```python
@@ -83,6 +88,30 @@ calc_gwp(material, quantity, boundary):
     gwp_acd = gwp_ac + (quantity × gwp_d)
 ```
 
+**PDF-Export** (Version 2.0 - Komplett neu implementiert)
+- **Modularer Aufbau** (7 separate Module in `services/pdf/`):
+  1. `pdf_config.py`: Konfigurationsklassen (`ExportConfig`, `InfoBlock`)
+  2. `pdf_styles.py`: Style-Definitionen (`PDFStyles`, `PDFColors`)
+  3. `pdf_charts.py`: Diagramm-Erstellung mit **Orchestrator für konsistente Farben**
+  4. `pdf_tables.py`: Professionelle Tabellen (graue Header, SUMMEN-Zeile, Grid)
+  5. `pdf_header_footer.py`: Header/Footer-Renderer (auf jeder Seite)
+  6. `pdf_export_pro.py`: Hauptklasse (`PDFExporterPro`, orchestriert Export)
+  7. `export_dialog_pro.py`: Erweiterter GUI-Dialog (in `ui/dialogs/`)
+- **Features**:
+  - PageTemplate mit Header/Footer auf jeder Seite
+  - Gestapelte & horizontale Diagramme (200 DPI)
+  - **Konsistente Farben** (Orchestrator wird übergeben)
+  - Info-Blöcke (Methodik, Projektbeschreibung, Ergebnisse)
+  - Kommentar-Felder pro Variante
+  - Logo-Unterstützung (3 Logos inkludiert)
+  - Layout im Excel-Tool-Stil (gelbe Section-Headings)
+
+**Excel-Export**
+- Erstellt `.xlsx` Dateien mit `openpyxl`
+- Dashboard-Sheet + Varianten-Sheets
+- Optional: Eingebettete Diagramme
+- Professionelle Formatierung (Header, Summen, Grid)
+
 ### Data Layer
 
 **MaterialRepository** - CSV-Verwaltung
@@ -104,8 +133,10 @@ calc_gwp(material, quantity, boundary):
 - Menü: CSV laden, Export, Theme-Toggle
 
 **DashboardView** - Vergleichsansicht (Tab 1)
-- Gestapeltes Balkendiagramm mit **konsistenten Farben**
-- **Vollständige Legende** (horizontal + vertikal zentriert)
+- Gestapeltes Balkendiagramm mit **zentral verwalteten Farben**
+- **Source of Truth** für Material-Farben (alle sichtbaren Varianten)
+- Ruft `orchestrator.update_material_colors(visible_indices)` beim Rendern auf
+- **Manuelle Legende** (alphabetisch sortiert, horizontal + vertikal zentriert)
 - **Material-Übersichtstabellen** (2x2 Grid, dynamische Höhe)
 - Vertikales Scrolling
 - Systemgrenze-Dropdown (6 Optionen)
@@ -113,7 +144,9 @@ calc_gwp(material, quantity, boundary):
 
 **VariantView** - Einzelvariante (Tabs 2-6)
 - **Einheitliche Diagramme** (8x3.5 Zoll, festes Layout)
-- Vertikale Balken mit Legende rechts
+- Vertikale Balken mit **manueller Legende** rechts (alphabetisch)
+- Nutzt `orchestrator.get_material_color()` für **konsistente Farben**
+- Überschreibt KEINE Farben (falls vom Dashboard bereits gesetzt)
 - Material-Tabelle (Treeview, 8 Zeilen)
 - **Inline-Mengenbearbeitung** (Doppelklick)
 - Buttons: Add/Delete, Move Up/Down
@@ -255,7 +288,60 @@ Bio-korrigierte Deklaration:
 - Flag `c_modules_missing` / `d_module_missing` setzen
 - Im UI anzeigen
 
-## 7. Erweiterbarkeit
+## 7. Zentrale Farbverwaltung (Version 2.0)
+
+**Problem:** Materialien hatten zuvor unterschiedliche Farben in Dashboard, Varianten-GUI und PDF-Export.
+
+**Lösung:** Zentrale Farbverwaltung im `AppOrchestrator`
+
+**Architektur:**
+
+```python
+# In core/orchestrator.py
+class StateStore:
+    material_colors: Dict[str, Tuple[float, float, float]] = {}
+    
+class AppOrchestrator:
+    def update_material_colors(self, visible_variant_indices: List[int]):
+        """
+        Aktualisiert zentrale Farbzuordnung basierend auf sichtbaren Varianten
+        - Sammelt alle Materialien aus sichtbaren Varianten
+        - Sortiert alphabetisch
+        - Weist Farben aus plt.cm.tab20.colors zu
+        - Speichert in self.state.material_colors
+        """
+        
+    def get_material_color(self, material_name: str) -> Tuple[float, float, float]:
+        """
+        Gibt konsistente Farbe für Material zurück
+        - Falls nicht vorhanden: Standard-Farbe
+        """
+```
+
+**Hierarchie:**
+
+1. **Dashboard** = "Source of Truth"
+   - Ruft `update_material_colors(visible_indices)` beim Rendern
+   - Berücksichtigt ALLE sichtbaren Varianten
+   - Setzt Farben für alle Materialien
+
+2. **Varianten-GUI**
+   - Nutzt `get_material_color(name)` für Balken & Legende
+   - Überschreibt KEINE Farben (nur wenn noch nicht gesetzt)
+   - Manuelle Legende (alphabetisch sortiert)
+
+3. **PDF-Export**
+   - `PDFChartCreator` erhält Orchestrator-Instanz
+   - Nutzt gleiche API wie GUI: `get_material_color(name)`
+   - Identische Farben wie in GUI-Ansicht
+
+**Vorteile:**
+- ✅ Konsistente Farben über alle Views
+- ✅ Alphabetische Sortierung für reproduzierbare Zuordnung
+- ✅ Keine doppelte Logik (DRY-Prinzip)
+- ✅ Einfache Wartung & Erweiterbarkeit
+
+## 8. Erweiterbarkeit
 
 **Neue Umweltindikatoren hinzufügen:**
 

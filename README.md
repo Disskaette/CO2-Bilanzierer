@@ -1,4 +1,4 @@
-# ABC-CO₂-Bilanzierer
+# CO₂-Bilanzierer
 
 Desktop-Anwendung für die Ökobilanzierung von Bauwerken nach ABC-Entwurfstafeln (Stand 2024-02) mit Schwerpunkt auf CO₂-Äquivalent (GWP).
 
@@ -22,13 +22,15 @@ Desktop-Anwendung für die Ökobilanzierung von Bauwerken nach ABC-Entwurfstafel
   - A1-A3 + C3 + C4 / A1-A3 + C3 + C4 (bio)
   - A1-A3 + C3 + C4 + D / A1-A3 + C3 + C4 + D (bio)
 - **Dashboard** mit Variantenvergleich:
-  - Gestapeltes Balkendiagramm mit konsistenten Farben
-  - Vollständige Legende (horizontal + vertikal zentriert)
+  - Gestapeltes Balkendiagramm mit **zentral verwalteten, konsistenten Farben**
+  - **Alphabetisch sortierte Materialien** für konsistente Farbzuordnung
+  - Manuelle Legende-Erstellung (horizontal + vertikal zentriert)
   - Material-Übersichtstabellen (2x2 Grid, dynamische Höhe)
   - Vertikales Scrolling für alle Varianten
 - **Variantenansichten** mit:
   - Kompakte Einzeldiagramme (einheitliche Größe)
-  - Vertikale Balken mit vollständiger Legende rechts
+  - Vertikale Balken mit vollständiger **manueller Legende** rechts
+  - **Konsistente Farben** über alle Views (Dashboard, Varianten, PDF)
   - Inline-Mengenbearbeitung (Doppelklick)
   - Zeilen verschieben (↑ ↓)
 - **Material-Picker-Dialog** mit:
@@ -282,23 +284,44 @@ Bei Fragen oder Problemen erstellen Sie bitte ein Issue im Repository.
 
 ---
 
-**Version**: 1.2.0  
-**Stand**: November 2024
+**Version**: 2.0  
+**Stand**: November 2024  
+**Release**: v2.0 - PDF Export und Anzeige fertig
 
-**Neu in Version 1.2.0:**
-- **Professioneller PDF-Export** komplett neu implementiert:
-  - Modulare Architektur (7 separate Module)
-  - PageTemplate mit Header/Footer auf jeder Seite
-  - Layout im Stil des Excel-Tools (gelbe Section-Headings)
-  - Professionelle Tabellen (graue Header, SUMMEN-Zeile, Grid)
-  - Hochwertige Diagramme (200 DPI, gestapelt/horizontal)
-  - Info-Blöcke (Methodik, Projektbeschreibung, Ergebnisse)
-  - Kommentar-Felder pro Variante
-  - Erweiteter Dialog mit Checkboxen für alle Optionen
-- Dokumentation: PDF_EXPORT_DOKUMENTATION.md
+## Changelog
 
-**Neu in Version 1.1.0:**
+### Version 2.0 (November 2024)
+**🎨 Konsistente Farbverwaltung:**
+- **Zentrale Farbverwaltung** in `orchestrator.py` implementiert
+- **Alphabetische Material-Sortierung** für konsistente Farbzuordnung
+- **Konsistente Farben** über alle Views: Dashboard, Varianten-GUI und PDF-Export
+- **Manuelle Legenden-Erstellung** in allen Ansichten (keine automatischen Matplotlib-Legenden mehr)
+- Dashboard ist "Source of Truth" für Materialfarben (basierend auf allen sichtbaren Varianten)
+
+**📄 Professioneller PDF-Export:**
+- Komplett neu implementierte PDF-Engine (7 Module)
+- PageTemplate mit Header/Footer auf jeder Seite
+- Layout im Stil des Excel-Tools (gelbe Section-Headings)
+- Professionelle Tabellen (graue Header, SUMMEN-Zeile, Grid)
+- Hochwertige Diagramme (200 DPI, gestapelt/horizontal)
+- **Konsistente Material-Farben** mit GUI-Ansicht
+- Info-Blöcke (Methodik, Projektbeschreibung, Ergebnisse)
+- Kommentar-Felder pro Variante
+- Logo-Unterstützung (3 Logos inkludiert)
+
+**🐛 Bugfixes:**
+- Tcl/Tk Error-Handler für harmlose Fehler beim Beenden
+- Projekt-Import Fehlerbehandlung verbessert
+- Debug-Logs entfernt (nur essentielle Logs bleiben)
+
+**📚 Dokumentation:**
+- PDF_EXPORT_DOKUMENTATION.md aktualisiert
+- EXPORT_ANLEITUNG.md erweitert
+- README.md überarbeitet
+
+### Version 1.1.0 (Oktober 2024)
 - PDF-Export mit professionellem Layout
 - Excel-Export mit allen Daten
 - Logo und Zusatzbilder unterstützt
 - Flexible Variantenauswahl
+- Favoriten-Persistierung

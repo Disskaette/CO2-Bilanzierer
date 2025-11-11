@@ -1,8 +1,11 @@
 # Export-Funktionalität - Anleitung
 
+**Version**: 2.0  
+**Letzte Aktualisierung**: November 2024
+
 ## Übersicht
 
-Die CO₂-Bilanzierer-App bietet umfassende Export-Möglichkeiten für PDF und Excel.
+Die CO₂-Bilanzierer-App bietet umfassende Export-Möglichkeiten für PDF und Excel mit **konsistenten Material-Farben** über alle Ansichten hinweg.
 
 ## Features
 
@@ -10,15 +13,19 @@ Die CO₂-Bilanzierer-App bietet umfassende Export-Möglichkeiten für PDF und E
 
 Der PDF-Export erstellt professionelle Berichte mit:
 
-- **Logo/Kopfzeile**: Platzhalter für Firmenlogo (optional)
+- **Logo/Kopfzeile**: Platzhalter für Firmenlogo (optional, 3 Logos inkludiert)
 - **Projektinformationen**: Name, Datum, Systemgrenze
 - **Dashboard-Vergleich**: Gestapeltes Balkendiagramm aller Varianten
 - **Zusammenfassungstabelle**: CO₂-Werte aller Varianten
 - **Varianten-Details**: Für jede ausgewählte Variante:
-  - Individuelles Diagramm
-  - Detaillierte Materialtabelle mit CO₂-Werten
+  - Kommentar-Box (optional)
+  - Individuelles Diagramm (horizontal)
+  - Detaillierte Materialtabelle mit CO₂-Werten und SUMMEN-Zeile
+- **Info-Blöcke**: Methodik, Projektbeschreibung, Ergebnisse (optional)
 - **Zusatzbild**: Optional ein weiteres Bild am Ende (z.B. Lebenszyklusphasen-Tabelle)
 - **Seitenzahlen**: Automatische Nummerierung
+- **Header/Footer**: Auf jeder Seite mit Logo, Projektname, Disclaimer
+- **Konsistente Farben**: Identische Material-Farben wie in GUI-Ansicht (Dashboard/Varianten)
 
 ### Excel-Export
 
@@ -41,16 +48,39 @@ Der Excel-Export erstellt Arbeitsblätter mit:
 
 ### 2. PDF-Export konfigurieren
 
-**Optionen:**
-- ☑ Dashboard-Vergleich einschließen
-- ☑ Varianten auswählen (mehrere möglich)
-- Logo-Datei auswählen (optional, PNG/JPG)
-- Zusatzbild auswählen (optional, PNG/JPG)
+**Dashboard-Optionen:**
+- ☑ Dashboard einschließen
+  - ☑ Dashboard-Diagramm (gestapeltes Balkendiagramm)
+  - ☑ Dashboard-Tabelle (Zusammenfassungstabelle)
+
+**Varianten-Optionen:**
+- ☑ Variante 1 (Holzbau)
+- ☑ Variante 2 (Stahlbau)
+- ☑ Variante 3 (Stahlbetonbau)
+- ... (alle aktiven Varianten)
+  - ☑ Varianten-Diagramme (horizontale Balkendiagramme)
+  - ☑ Varianten-Tabellen (Materialtabellen mit SUMMEN-Zeile)
+
+**Kommentare:**
+- **Button**: "Kommentare bearbeiten"
+  - Öffnet Dialog mit Textfeldern pro Variante
+  - Kommentare erscheinen als Box unter der Varianten-Überschrift im PDF
+  - Optional, kann leer gelassen werden
+
+**Info-Blöcke:**
+- ☐ Methodik (vordefinierter Text, erscheint am Anfang)
+- ☐ Projektbeschreibung (editierbar)
+- ☐ Zusammenfassung der Ergebnisse (editierbar)
+
+**Bilder:**
+- Logo-Datei auswählen (optional, PNG/JPG, 4cm x 2cm)
+  - 3 Logos bereits inkludiert im `services/pdf/Logos/` Ordner
+- Zusatzbild auswählen (optional, PNG/JPG, 15cm x 10cm)
 
 **Exportieren:**
 - Klicken Sie auf **"Als PDF exportieren"**
 - Wählen Sie Speicherort und Dateinamen
-- PDF wird erstellt
+- PDF wird erstellt mit konsistenten Farben
 
 ### 3. Excel-Export konfigurieren
 
