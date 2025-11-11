@@ -19,12 +19,13 @@ MODELS - DATENMODELLE
 │   ├── variant.py                  # Variant + MaterialRow
 │   └── project.py                  # Project (Hauptcontainer)
 │
-CORE - KERNLOGIK
-================
-├── core/
-│   ├── __init__.py
-│   ├── orchestrator.py             # AppOrchestrator (Zentrale Steuerung)
-│   └── persistence.py              # PersistenceService (Speichern/Laden)
+CORE - GESCHÄFTSLOGIK
+=====================
+└── core/
+    ├── __init__.py
+    ├── orchestrator.py             # AppOrchestrator (zentrale Steuerung)
+    ├── persistence.py              # PersistenceService (Speichern/Laden)
+    └── undo_redo_manager.py        # UndoRedoManager (Änderungsverwaltung)
 │
 SERVICES - BUSINESS-LOGIK
 ==========================
@@ -54,7 +55,8 @@ UI - BENUTZEROBERFLÄCHE
 │   │
 │   └── dialogs/
 │       ├── __init__.py
-│       └── material_picker.py      # MaterialPickerDialog (Materialauswahl)
+│       ├── material_picker.py      # MaterialPickerDialog (Materialauswahl)
+│       └── project_picker_dialog.py # ProjectPickerDialog (Projektwechsel)
 │
 UTILS - HILFSFUNKTIONEN
 ========================
@@ -67,19 +69,33 @@ UTILS - HILFSFUNKTIONEN
 LAUFZEITVERZEICHNIS (wird automatisch erstellt)
 ================================================
 ~/.abc_co2_bilanzierer/             # Benutzerverzeichnis
-├── config.json                     # Konfiguration + MATERIAL-FAVORITEN
+├── config.json                     # Konfiguration + PROJEKTVERWALTUNG
 │                                   # - last_project_id
 │                                   # - global_csv_path
 │                                   # - favorites (IDs)
 │                                   # - favorite_names
 │                                   # - theme, window_size
-├── projects/
-│   └── <project-id>.json          # Gespeicherte Projekte
+│                                   # - recent_projects (UUID-Liste)
+│                                   # - external_project_paths (UUID→Pfad)
+│                                   # - last_open_directory (für Dialoge)
+├── projects/                       # Interne Projekte (optional)
+│   └── <uuid>.json                # Projekt-Dateien (intern)
 ├── snapshots/
 │   └── <project-id>/
 │       └── autosave_*.json        # Autosave-Snapshots (max. 20)
 └── logs/
     └── app.log                    # Anwendungs-Log
+
+EXTERNE PROJEKTE (beliebige Speicherorte)
+==========================================
+Projekte können überall gespeichert werden:
+~/Desktop/MeinProjekt.json
+~/iCloud/Projekte/Bauwerk_A.json
+/Volumes/USB/projekt_xyz.json
+
+→ UUID-basierte Identifikation (unabhängig vom Dateinamen)
+→ Automatische Pfad-Aktualisierung bei Umbenennung/Verschiebung
+→ Tracking über external_project_paths in config.json
 
 
 KOMPONENTEN-ÜBERSICHT
@@ -92,10 +108,11 @@ MODELS (4 Dateien)
 ✓ Variant           - Bauwerksvariante mit Liste von MaterialRows
 ✓ Project           - Hauptcontainer mit max. 5 Varianten
 
-CORE (2 Dateien)
-----------------
-✓ AppOrchestrator   - Zentrale Steuerung, koordiniert alle Services
-✓ PersistenceService - Speichern/Laden JSON, Snapshots, Auto-Restore
+CORE (3 Dateien)
+-----------------
+✓ AppOrchestrator   - Zentrale Steuerung, Event-System, Autosave
+✓ PersistenceService - Speichern/Laden, Snapshots, Config
+✓ UndoRedoManager   - Stack-basierte History (max. 10 Schritte), Deep Copy
 
 SERVICES (1 Datei)
 ------------------
@@ -108,20 +125,29 @@ DATA (1 Datei)
                      - Custom Materials (eigene EPDs)
                      - EN 15804+A2 Filter
 
-UI (7 Dateien)
+UI (8 Dateien)
 --------------
 ✓ WelcomeWindow     - Startbildschirm mit zuletzt geöffneten Projekten
+                      - Zeigt interne UND externe Projekte
+                      - Intelligentes Startverzeichnis
 ✓ MainWindow        - Hauptfenster mit Tab-Struktur + 6 Systemgrenzen
+                      - Projekt öffnen mit ProjectPickerDialog
+                      - Undo/Redo-Buttons (zentriert) + Keyboard-Shortcuts
 ✓ ProjectTreeView   - Dateibaum (links)
 ✓ DashboardView     - Vergleichsdiagramm mit konsistenten Farben
                       - Vollständige Legende (zentriert)
                       - Material-Übersichtstabellen (2x2 Grid)
 ✓ VariantView       - Einzelvariante mit einheitlichem Diagramm
                       - Inline-Mengenbearbeitung (Doppelklick)
+                      - Intelligente Summen-Anzeige (A, A+C, A+C+D)
+                      - Auto-Umschaltung Standard/Bio
 ✓ MaterialPickerDialog - Material-Suche mit Filtern
                          - Favoriten-Stern (★) zum Toggle
                          - EN 15804+A2 Filter (Standard aktiv)
                          - Custom Materials Löschung (Rechtsklick)
+✓ ProjectPickerDialog  - Projektwechsel im laufenden Programm
+                         - Recent Projects Liste
+                         - Durchsuchen mit intelligentem Startverzeichnis
 
 UTILS (2 Dateien)
 -----------------
@@ -151,12 +177,28 @@ KERNFUNKTIONEN (ALLE IMPLEMENTIERT)
    - Einheitliche Diagramme (8x3.5 Zoll, festes Layout)
    - Inline-Mengenbearbeitung (Doppelklick)
    - Zeilen verschieben (↑ ↓)
+   - Intelligente Summen: A, A+C, A+C+D mit Auto-Umschaltung Standard/Bio
 ✅ Material-Picker-Dialog:
    - Live-Suche mit Favoriten-Markierung (★)
    - EN 15804+A2 Filter (Standard aktiviert)
    - Datensatztyp-Filter
 ✅ Custom Materials - Eigene EPDs hinzufügen/löschen
 ✅ Favoriten-Persistierung in config.json
+✅ **FLEXIBLE PROJEKTVERWALTUNG:**
+   - UUID-basierte Projekt-Identifikation
+   - Speichern an beliebigen Orten (Desktop, Cloud, USB)
+   - "Speichern unter" erstellt neues unabhängiges Projekt
+   - Automatische Pfad-Aktualisierung bei Umbenennung/Verschiebung
+   - Recent Projects Liste (max. 10, automatisch sortiert)
+   - ProjectPickerDialog für schnellen Projektwechsel
+   - Intelligentes Startverzeichnis (merkt sich letzten Ordner)
+✅ **UNDO/REDO-SYSTEM:**
+   - Stack-basierte History (max. 10 Schritte)
+   - Deep Copy von Project-States für sichere Isolation
+   - Keyboard-Shortcuts: Cmd+Z / Ctrl+Z (Undo), Cmd+Shift+Z / Ctrl+Y (Redo)
+   - Zentrierte Buttons in Menüleiste
+   - Automatisches Redo-Clearing bei neuen Änderungen
+   - Integration mit allen State-ändernden Operationen
 ✅ Autosave mit Debounce (800ms)
 ✅ Snapshots (max. 20 pro Projekt, Auto-Restore)
 ✅ Persistenz im Benutzerverzeichnis
@@ -235,18 +277,18 @@ EVENTS (StateStore)
 
 DATEI-STATISTIK
 ===============
-Gesamt: 21 Python-Dateien
+Gesamt: 23 Python-Dateien
 - Models: 4 Dateien
-- Core: 2 Dateien
+- Core: 3 Dateien (inkl. UndoRedoManager)
 - Services: 1 Datei
 - Data: 1 Datei
-- UI: 7 Dateien
+- UI: 8 Dateien (inkl. ProjectPickerDialog)
 - Utils: 2 Dateien
 - App: 1 Datei
 - Docs: 3 Markdown-Dateien
 - Config: 2 Dateien (requirements.txt, .gitignore)
 
-Geschätzte Zeilen Code: ~4000 LOC (ohne Kommentare)
+Geschätzte Zeilen Code: ~4400 LOC (ohne Kommentare)
 
 
 QUALITÄTSMERKMALE
@@ -279,7 +321,48 @@ Bildungs- und Forschungszwecke
 
 VERSION
 =======
-1.1.0 (November 2024)
+2.0 (November 2024)
+App-Name: CO₂-Bilanzierer
+
+NEU IN 2.0:
+- ℹ️ **INFO-DIALOG:**
+  - Programminformationen mit normativen Grundlagen
+  - DIN EN 15804, ISO 21931-1, ISO 14040, ISO 14044
+  - Feature-Übersicht
+  - PDF-Opener für Entwurfstafeln (in .app Bundle eingebunden)
+- 🎨 **FARB-KONSISTENZ:**
+  - Materialfarben basieren auf ALLEN Materialien im Projekt
+  - Farben bleiben konstant beim An-/Abwählen von Dashboard-Varianten
+  - Konsistente Farben über alle Ansichten
+- ✏️ **UMBENENNUNGS-FUNKTIONEN:**
+  - Projektnamen ändern mit Undo-Support
+  - Variantennamen ändern mit Undo-Support
+  - Label "Projektname:" vor Eingabefeld
+
+NEU IN 1.3.0:
+- 🔄 **UNDO/REDO-SYSTEM:**
+  - Stack-basierte History (max. 10 Schritte)
+  - Deep Copy von Project-States
+  - Keyboard-Shortcuts (Cmd+Z, Cmd+Shift+Z)
+  - Zentrierte Buttons in Menüleiste
+  - Automatisches Redo-Clearing bei neuen Änderungen
+  - Loop-Prevention und sichere State-Verwaltung
+  - Separate Undo-Schritte für Zeile + Material
+
+NEU IN 1.2.0:
+- 📁 **FLEXIBLE PROJEKTVERWALTUNG:**
+  - UUID-basierte Identifikation (unabhängig vom Dateinamen)
+  - Speichern an beliebigen Orten (Desktop, Cloud, USB)
+  - "Speichern unter" erstellt neues unabhängiges Projekt
+  - Automatische Pfad-Aktualisierung bei Umbenennung/Verschiebung
+  - Recent Projects Liste mit Auto-Säuberung
+  - ProjectPickerDialog für schnellen Projektwechsel
+  - Intelligentes Startverzeichnis
+- 🧮 **INTELLIGENTE SUMMEN-ANZEIGE:**
+  - Zeigt A, A+C, A+C+D (wenn D-Werte vorhanden)
+  - Automatische Umschaltung Standard/Bio basierend auf Systemgrenze
+  - Bio-Werte in grün mit "(bio)" Suffix
+  - Keine doppelte Anzeige mehr
 
 NEU IN 1.1.0:
 - ★ Favoriten-Persistierung (dauerhaft gespeichert)

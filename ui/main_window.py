@@ -6,6 +6,10 @@ import customtkinter as ctk
 from tkinter import filedialog, messagebox
 from typing import Optional
 import logging
+import sys
+import os
+import subprocess
+from pathlib import Path
 
 from core.orchestrator import AppOrchestrator
 from ui.project_tree import ProjectTreeView
@@ -49,10 +53,20 @@ class MainWindow(ctk.CTk):
         self.current_tab = 0
         self.tab_buttons: list[ctk.CTkButton] = []
 
+        # Undo/Redo Buttons (für Enable/Disable)
+        self.undo_btn: Optional[ctk.CTkButton] = None
+        self.redo_btn: Optional[ctk.CTkButton] = None
+
         # Event-Registrierung
         self._register_orchestrator_events()
 
         self._build_ui()
+
+        # Keyboard-Shortcuts für Undo/Redo
+        self._bind_keyboard_shortcuts()
+
+        # Handler für Fenster schließen (X-Button)
+        self.protocol("WM_DELETE_WINDOW", self._on_closing)
 
         self.logger.info("MainWindow initialisiert")
 
@@ -82,6 +96,10 @@ class MainWindow(ctk.CTk):
             'project_renamed', self._on_project_renamed)
         self.orchestrator.state.register_callback(
             'visibility_changed', self._on_visibility_changed)
+        self.orchestrator.state.register_callback(
+            'undo_performed', self._on_undo_redo_performed)
+        self.orchestrator.state.register_callback(
+            'redo_performed', self._on_undo_redo_performed)
 
     def _build_ui(self) -> None:
         """Erstellt UI-Struktur"""
@@ -165,6 +183,7 @@ class MainWindow(ctk.CTk):
         """Erstellt Menüleiste (vereinfacht als Button-Leiste)"""
         menu_frame = ctk.CTkFrame(self, height=40)
         menu_frame.pack(fill="x", padx=5, pady=5)
+        menu_frame.pack_propagate(False)  # Verhindert Auto-Resize
 
         # Datei-Menü
         file_btn = ctk.CTkButton(
@@ -193,6 +212,30 @@ class MainWindow(ctk.CTk):
         )
         export_btn.pack(side="left", padx=2)
 
+        # Container für zentrierte Undo/Redo-Buttons
+        center_frame = ctk.CTkFrame(menu_frame, fg_color="transparent")
+        center_frame.place(relx=0.5, rely=0.5, anchor="center")
+
+        # Undo Button
+        self.undo_btn = ctk.CTkButton(
+            center_frame,
+            text="↶ Undo",
+            width=85,
+            command=self._on_undo,
+            state="disabled"
+        )
+        self.undo_btn.pack(side="left", padx=3)
+
+        # Redo Button
+        self.redo_btn = ctk.CTkButton(
+            center_frame,
+            text="↷ Redo",
+            width=85,
+            command=self._on_redo,
+            state="disabled"
+        )
+        self.redo_btn.pack(side="left", padx=3)
+
         # Theme-Toggle
         theme_btn = ctk.CTkButton(
             menu_frame,
@@ -201,6 +244,15 @@ class MainWindow(ctk.CTk):
             command=self._toggle_theme
         )
         theme_btn.pack(side="right", padx=2)
+
+        # Info-Button (links vom Theme)
+        info_btn = ctk.CTkButton(
+            menu_frame,
+            text="ℹ️ Info",
+            width=80,
+            command=self._show_info_dialog
+        )
+        info_btn.pack(side="right", padx=2)
 
     def _create_tab_bar(self, parent: ctk.CTkFrame) -> None:
         """
@@ -372,9 +424,10 @@ class MainWindow(ctk.CTk):
         """Zeigt professionellen Export-Dialog"""
         project = self.orchestrator.get_current_project()
         if not project:
-            messagebox.showwarning("Kein Projekt", "Bitte erstellen oder laden Sie ein Projekt.")
+            messagebox.showwarning(
+                "Kein Projekt", "Bitte erstellen oder laden Sie ein Projekt.")
             return
-        
+
         ExportDialogPro(self, project)
 
     def _new_project(self) -> None:
@@ -385,28 +438,18 @@ class MainWindow(ctk.CTk):
         messagebox.showinfo("Erfolg", "Neues Projekt erstellt")
 
     def _open_project(self) -> None:
-        """Öffnet Projekt über Dateibrowser"""
-        from pathlib import Path
+        """Öffnet Projekt über Dialog mit zuletzt geöffneten Projekten"""
+        from ui.dialogs.project_picker_dialog import ProjectPickerDialog
 
-        # Standard-Projektordner ermitteln
-        default_dir = Path.home() / '.abc_co2_bilanzierer' / 'projects'
+        # Zeige Dialog
+        dialog = ProjectPickerDialog(self, self.orchestrator)
+        self.wait_window(dialog)
 
-        filepath = filedialog.askopenfilename(
-            title="Projekt öffnen",
-            initialdir=str(default_dir) if default_dir.exists() else None,
-            filetypes=[
-                ("Projekt-Dateien", "*.json"),
-                ("Alle Dateien", "*.*")
-            ]
-        )
-
-        if filepath:
-            # Projekt-ID aus Dateinamen extrahieren
-            project_id = Path(filepath).stem
-
-            if self.orchestrator.load_project(project_id):
+        # Projekt ausgewählt?
+        if dialog.selected_project_id:
+            if self.orchestrator.load_project(dialog.selected_project_id):
                 self._refresh_ui()
-                messagebox.showinfo("Erfolg", f"Projekt geladen:\n{filepath}")
+                messagebox.showinfo("Erfolg", "Projekt geladen")
             else:
                 messagebox.showerror(
                     "Fehler", "Fehler beim Laden des Projekts")
@@ -427,15 +470,35 @@ class MainWindow(ctk.CTk):
             messagebox.showerror("Fehler", "Kein Projekt geladen")
             return
 
-        # Standard-Projektordner
-        default_dir = Path.home() / '.abc_co2_bilanzierer' / 'projects'
+        # Intelligentes Startverzeichnis bestimmen
+        config = self.orchestrator.load_config()
+        initial_dir = None
+
+        # 1. Priorität: Zuletzt verwendetes Verzeichnis (Öffnen/Speichern)
+        last_open_dir = config.get('last_open_directory')
+        if last_open_dir:
+            last_dir_path = Path(last_open_dir)
+            if last_dir_path.exists() and last_dir_path.is_dir():
+                initial_dir = str(last_dir_path)
+
+        # 2. Priorität: Ordner des aktuellen Projekts (falls extern)
+        if not initial_dir:
+            external_paths = config.get('external_project_paths', {})
+            if project.id in external_paths:
+                current_path = Path(external_paths[project.id])
+                if current_path.exists():
+                    initial_dir = str(current_path.parent)
+
+        # 3. Fallback: Benutzer-Home-Verzeichnis
+        if not initial_dir:
+            initial_dir = str(Path.home())
 
         # Dateiname vorschlagen
         suggested_name = f"{project.name.replace(' ', '_')}.json"
 
         filepath = filedialog.asksaveasfilename(
             title="Projekt speichern unter",
-            initialdir=str(default_dir) if default_dir.exists() else None,
+            initialdir=initial_dir,
             initialfile=suggested_name,
             defaultextension=".json",
             filetypes=[
@@ -445,6 +508,11 @@ class MainWindow(ctk.CTk):
         )
 
         if filepath:
+            # Speichere Verzeichnis für nächstes Mal
+            selected_dir = str(Path(filepath).parent)
+            config['last_open_directory'] = selected_dir
+            self.orchestrator.persistence.save_config(config)
+
             # Speichere mit benutzerdefiniertem Pfad
             if self.orchestrator.save_project_as(filepath):
                 messagebox.showinfo(
@@ -469,7 +537,6 @@ class MainWindow(ctk.CTk):
             else:
                 messagebox.showerror("Fehler", "Fehler beim Laden der CSV")
 
-
     def _toggle_theme(self) -> None:
         """Wechselt zwischen Dark/Light Mode"""
         current = ctk.get_appearance_mode()
@@ -484,6 +551,156 @@ class MainWindow(ctk.CTk):
             # Aktuelle Variante neu laden
             variant_index = self.current_tab - 1
             self._show_variant(variant_index)
+
+    def _show_info_dialog(self) -> None:
+        """Zeigt Info-Dialog mit Programm-Informationen"""
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Programm-Information")
+        dialog.transient(self)
+        dialog.grab_set()
+
+        # Main Frame
+        main_frame = ctk.CTkFrame(dialog)
+        main_frame.pack(fill="both", expand=True, padx=20, pady=20)
+
+        # Titel
+        title_label = ctk.CTkLabel(
+            main_frame,
+            text="CO₂-Bilanzierer",
+            font=ctk.CTkFont(size=20, weight="bold")
+        )
+        title_label.pack(pady=(0, 10))
+
+        # Version
+        version_label = ctk.CTkLabel(
+            main_frame,
+            text="Version 2.0",
+            font=ctk.CTkFont(size=14)
+        )
+        version_label.pack(pady=(0, 20))
+
+        # Normative Grundlagen
+        norm_frame = ctk.CTkFrame(main_frame)
+        norm_frame.pack(fill="x", pady=10)
+
+        norm_title = ctk.CTkLabel(
+            norm_frame,
+            text="Normative Grundlagen:",
+            font=ctk.CTkFont(size=14, weight="bold")
+        )
+        norm_title.pack(anchor="w", padx=10, pady=(10, 5))
+
+        norms = [
+            "• DIN EN 15804:2022-03 – Nachhaltigkeit von Bauwerken",
+            "• ISO 21931-1:2022 – Nachhaltigkeit im Bauwesen",
+            "• ISO 14040:2021 – Ökobilanz – Grundsätze und Rahmenbedingungen",
+            "• ISO 14044:2021 – Ökobilanz – Anforderungen und Anleitungen"
+        ]
+
+        for norm in norms:
+            norm_label = ctk.CTkLabel(
+                norm_frame,
+                text=norm,
+                font=ctk.CTkFont(size=12),
+                anchor="w"
+            )
+            norm_label.pack(anchor="w", padx=20, pady=2)
+
+        norm_frame.pack_configure(pady=(0, 10))
+
+        # Features
+        features_frame = ctk.CTkFrame(main_frame)
+        features_frame.pack(fill="x", pady=10)
+
+        features_title = ctk.CTkLabel(
+            features_frame,
+            text="Hauptfunktionen:",
+            font=ctk.CTkFont(size=14, weight="bold")
+        )
+        features_title.pack(anchor="w", padx=10, pady=(10, 5))
+
+        features = [
+            "• Vergleich von bis zu 5 Bauwerksvarianten",
+            "• 6 Systemgrenzen (A1-A3, A+C, A+C+D, jeweils Standard & Bio)",
+            "• Undo/Redo-System (max. 10 Schritte)",
+            "• Flexible Projektverwaltung (intern & extern)",
+            "• Autosave mit Snapshot-System",
+            "• PDF-Export mit professionellem Layout"
+        ]
+
+        for feature in features:
+            feature_label = ctk.CTkLabel(
+                features_frame,
+                text=feature,
+                font=ctk.CTkFont(size=12),
+                anchor="w"
+            )
+            feature_label.pack(anchor="w", padx=20, pady=2)
+
+        features_frame.pack_configure(pady=(0, 10))
+
+        # PDF-Button
+        pdf_btn = ctk.CTkButton(
+            main_frame,
+            text="📖 Entwurfstafeln Ökobilanzierung öffnen",
+            command=self._open_documentation_pdf,
+            height=40,
+            font=ctk.CTkFont(size=13, weight="bold")
+        )
+        pdf_btn.pack(pady=20, fill="x", padx=20)
+
+        # Schließen-Button
+        close_btn = ctk.CTkButton(
+            dialog,
+            text="Schließen",
+            command=dialog.destroy,
+            width=120
+        )
+        close_btn.pack(pady=(0, 20))
+        
+        # Fenster auf Inhalt anpassen (nach dem Packen aller Widgets)
+        dialog.update_idletasks()
+        dialog.minsize(600, 100)
+
+    def _open_documentation_pdf(self) -> None:
+        """Öffnet die Bilanzierungsprozess-PDF"""
+        try:
+            # Pfad zur PDF-Datei ermitteln
+            # Für .app: Ressourcen sind im Bundle
+            # Für Entwicklung: Im data-Ordner
+            if getattr(sys, 'frozen', False):
+                # Läuft als .app (PyInstaller)
+                base_path = sys._MEIPASS
+            else:
+                # Läuft als Skript
+                base_path = Path(__file__).parent.parent
+
+            pdf_path = Path(base_path) / "data" / \
+                "ABC_Entwurfstafeln_Oekobilanzierung_2024-12.pdf"
+
+            if not pdf_path.exists():
+                messagebox.showerror(
+                    "PDF nicht gefunden",
+                    f"Die PDF-Datei wurde nicht gefunden:\n{pdf_path}"
+                )
+                return
+
+            # PDF öffnen (plattformabhängig)
+            if sys.platform == "darwin":  # macOS
+                subprocess.run(["open", str(pdf_path)], check=True)
+            elif sys.platform == "win32":  # Windows
+                os.startfile(str(pdf_path))
+            else:  # Linux
+                subprocess.run(["xdg-open", str(pdf_path)], check=True)
+
+            self.logger.info(f"PDF geöffnet: {pdf_path}")
+
+        except Exception as e:
+            self.logger.error(f"Fehler beim Öffnen der PDF: {e}")
+            messagebox.showerror(
+                "Fehler",
+                f"Die PDF konnte nicht geöffnet werden:\n{str(e)}"
+            )
 
     def _on_boundary_changed(self, value: str) -> None:
         """Systemgrenze wurde geändert"""
@@ -501,7 +718,6 @@ class MainWindow(ctk.CTk):
 
     def _get_csv_info(self) -> str:
         """Gibt CSV-Info-String zurück"""
-        from pathlib import Path
         metadata = self.orchestrator.get_csv_metadata()
 
         if metadata['path']:
@@ -514,6 +730,9 @@ class MainWindow(ctk.CTk):
         """Aktualisiert gesamte UI"""
         # Tabs neu bauen
         self._rebuild_tabs()
+
+        # Undo/Redo-Buttons aktualisieren
+        self._update_undo_redo_buttons()
 
         if self.project_tree:
             self.project_tree.refresh()
@@ -544,6 +763,9 @@ class MainWindow(ctk.CTk):
 
     def _on_row_added(self, variant_index: int, row_id: str) -> None:
         """Callback: Zeile wurde hinzugefügt"""
+        # Undo/Redo-Buttons aktualisieren
+        self._update_undo_redo_buttons()
+
         # ProjectTree aktualisieren (Zeilenanzahl)
         if self.project_tree:
             self.project_tree.refresh()
@@ -558,6 +780,9 @@ class MainWindow(ctk.CTk):
 
     def _on_row_updated(self, variant_index: int, row_id: str) -> None:
         """Callback: Zeile wurde aktualisiert"""
+        # Undo/Redo-Buttons aktualisieren
+        self._update_undo_redo_buttons()
+
         # ProjectTree aktualisieren (falls Zeilenanzahl sich ändert)
         if self.project_tree:
             self.project_tree.refresh()
@@ -572,6 +797,9 @@ class MainWindow(ctk.CTk):
 
     def _on_row_deleted(self, variant_index: int, row_id: str) -> None:
         """Callback: Zeile wurde gelöscht"""
+        # Undo/Redo-Buttons aktualisieren
+        self._update_undo_redo_buttons()
+
         # ProjectTree aktualisieren (Zeilenanzahl)
         if self.project_tree:
             self.project_tree.refresh()
@@ -597,21 +825,22 @@ class MainWindow(ctk.CTk):
         """Callback: Autosave fehlgeschlagen"""
         messagebox.showwarning(
             "Autosave fehlgeschlagen",
-            "Das automatische Speichern ist fehlgeschlagen.\n"
-            "Bitte prüfen Sie den Speicherort und die Berechtigungen."
+            "Projekt konnte nicht automatisch gespeichert werden"
         )
 
-    def _on_variant_renamed(self, variant_index: int) -> None:
-        """Callback: Varianten-Name wurde geändert"""
-        # Tabs neu bauen um neuen Namen anzuzeigen
-        self._rebuild_tabs()
+    def _on_variant_renamed(self, variant_index: int, new_name: str) -> None:
+        """Callback: Variante wurde umbenannt"""
+        # Undo/Redo-Buttons aktualisieren
+        self._update_undo_redo_buttons()
 
-        # Projekt-Tree aktualisieren
-        if self.project_tree:
-            self.project_tree.refresh()
+        # Tabs neu bauen
+        self._rebuild_tabs()
 
     def _on_variant_deleted(self, remaining_count: int) -> None:
         """Callback: Variante wurde gelöscht"""
+        # Undo/Redo-Buttons aktualisieren
+        self._update_undo_redo_buttons()
+
         # Tabs neu bauen
         self._rebuild_tabs()
 
@@ -631,6 +860,9 @@ class MainWindow(ctk.CTk):
 
     def _on_variant_added(self, new_count: int) -> None:
         """Callback: Variante wurde hinzugefügt"""
+        # Undo/Redo-Buttons aktualisieren
+        self._update_undo_redo_buttons()
+
         # Tabs neu bauen
         self._rebuild_tabs()
 
@@ -643,12 +875,141 @@ class MainWindow(ctk.CTk):
 
     def _on_project_renamed(self, new_name: str) -> None:
         """Callback: Projektname wurde geändert"""
+        # Undo/Redo-Buttons aktualisieren
+        self._update_undo_redo_buttons()
+
         # ProjectTree aktualisieren
         if self.project_tree:
             self.project_tree.refresh()
 
     def _on_visibility_changed(self) -> None:
         """Callback: Varianten-Sichtbarkeit wurde geändert"""
+        # Undo/Redo-Buttons aktualisieren
+        self._update_undo_redo_buttons()
+
         # Dashboard komplett neu laden, wenn wir im Dashboard sind
         if self.current_tab == 0:
             self._show_dashboard()
+
+    # ========================================================================
+    # UNDO / REDO
+    # ========================================================================
+
+    def _bind_keyboard_shortcuts(self) -> None:
+        """Bindet Keyboard-Shortcuts für Undo/Redo"""
+        # Cmd+Z (Mac) / Ctrl+Z (Windows/Linux) für Undo
+        if sys.platform == "darwin":
+            # Mac
+            self.bind("<Command-z>", lambda e: self._on_undo())
+            self.bind("<Command-Z>", lambda e: self._on_undo())
+            # Cmd+Shift+Z für Redo
+            self.bind("<Command-Shift-z>", lambda e: self._on_redo())
+            self.bind("<Command-Shift-Z>", lambda e: self._on_redo())
+        else:
+            # Windows/Linux
+            self.bind("<Control-z>", lambda e: self._on_undo())
+            self.bind("<Control-Z>", lambda e: self._on_undo())
+            # Ctrl+Y oder Ctrl+Shift+Z für Redo
+            self.bind("<Control-y>", lambda e: self._on_redo())
+            self.bind("<Control-Y>", lambda e: self._on_redo())
+            self.bind("<Control-Shift-z>", lambda e: self._on_redo())
+            self.bind("<Control-Shift-Z>", lambda e: self._on_redo())
+
+        self.logger.info("Keyboard-Shortcuts für Undo/Redo gebunden")
+
+    def _on_undo(self) -> None:
+        """Handler für Undo-Action"""
+        try:
+            success = self.orchestrator.perform_undo()
+            if success:
+                self.logger.info("✓ Undo durchgeführt")
+                self._update_undo_redo_buttons()
+            else:
+                self.logger.debug("Undo nicht möglich (keine History)")
+        except Exception as e:
+            self.logger.error(f"Fehler beim Undo: {e}", exc_info=True)
+            messagebox.showerror("Undo-Fehler", f"Fehler beim Undo:\n{str(e)}")
+
+    def _on_redo(self) -> None:
+        """Handler für Redo-Action"""
+        try:
+            success = self.orchestrator.perform_redo()
+            if success:
+                self.logger.info("✓ Redo durchgeführt")
+                self._update_undo_redo_buttons()
+            else:
+                self.logger.debug("Redo nicht möglich (keine Redo-History)")
+        except Exception as e:
+            self.logger.error(f"Fehler beim Redo: {e}", exc_info=True)
+            messagebox.showerror("Redo-Fehler", f"Fehler beim Redo:\n{str(e)}")
+
+    def _update_undo_redo_buttons(self) -> None:
+        """Aktualisiert den State der Undo/Redo-Buttons"""
+        if self.undo_btn:
+            if self.orchestrator.can_undo():
+                self.undo_btn.configure(state="normal")
+            else:
+                self.undo_btn.configure(state="disabled")
+
+        if self.redo_btn:
+            if self.orchestrator.can_redo():
+                self.redo_btn.configure(state="normal")
+            else:
+                self.redo_btn.configure(state="disabled")
+
+    def _on_undo_redo_performed(self, *args, **kwargs) -> None:
+        """Callback: Undo oder Redo wurde durchgeführt"""
+        # Button-States aktualisieren
+        self._update_undo_redo_buttons()
+
+        # Tabs neu bauen (falls Varianten hinzugefügt/gelöscht wurden)
+        self._rebuild_tabs()
+
+        # Aktuelle Ansicht neu laden
+        if self.current_tab == 0:
+            self._show_dashboard()
+        else:
+            self._show_variant(self.current_tab - 1)
+
+    # ========================================================================
+    # FENSTER SCHLIESSEN
+    # ========================================================================
+
+    def _on_closing(self) -> None:
+        """Handler für Fenster schließen (X-Button)"""
+        try:
+            # Projekt speichern
+            if self.orchestrator and self.orchestrator.state.current_project:
+                self.orchestrator.save_project()
+                self.logger.info("Projekt vor Beenden gespeichert")
+
+            # Konfiguration speichern
+            if self.orchestrator:
+                self.orchestrator.save_config()
+
+            # Alle geplanten Callbacks abbrechen
+            try:
+                after_ids = self.tk.call('after', 'info')
+                for after_id in after_ids:
+                    try:
+                        self.after_cancel(after_id)
+                    except:
+                        pass
+            except:
+                pass
+
+            self.logger.info("Fenster wird geschlossen")
+        except Exception as e:
+            self.logger.error(f"Fehler beim Schließen: {e}")
+        finally:
+            # Mainloop beenden
+            self.quit()
+
+            # Fenster zerstören (kann TclError werfen, aber ist harmlos)
+            try:
+                self.destroy()
+            except:
+                pass  # Ignoriere Tcl-Fehler beim Cleanup
+
+            # Prozess explizit beenden
+            sys.exit(0)

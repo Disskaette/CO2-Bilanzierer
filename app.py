@@ -33,16 +33,31 @@ class Application:
     VERSION = "2.0"
 
     def __init__(self):
-        # Orchestrator und Logging ZUERST initialisieren (bevor GUI)
+        # Temporäres Root-Window SOFORT erstellen
+        self.temp_root = ctk.CTk()
+        self.temp_root.withdraw()  # Komplett verstecken
+        
+        # Splash Screen SOFORT anzeigen (vor allem anderen!)
+        self.splash = SplashScreen(self.temp_root, version=self.VERSION)
+        
+        # Attribute initialisieren
+        self.orchestrator = None
+        self.logger = None
+        self.main_window = None
+        
+        # Schwere Initialisierung asynchron (damit Splash Screen sofort sichtbar ist)
+        self.temp_root.after(50, self._initialize)
+
+    def _initialize(self):
+        """Initialisiert Orchestrator und lädt Daten mit Splash-Screen Status-Updates"""
+        
+        # Orchestrator und Logging initialisieren
+        self.splash.update_status("Initialisiere...")
         self.orchestrator = AppOrchestrator()
         log_path = Path(self.orchestrator.get_log_path())
         setup_logging(log_path)
         self.logger = logging.getLogger(__name__)
         self.logger.info(f"CO₂-Bilanzierer v{self.VERSION} gestartet")
-        
-        # Temporäres Root-Window erstellen
-        self.temp_root = ctk.CTk()
-        self.temp_root.withdraw()  # Komplett verstecken
         
         # Tcl/Tk Error-Handler für harmlose Fehler beim Beenden
         def report_callback_exception(exc_type, exc_value, exc_tb):
@@ -50,21 +65,10 @@ class Application:
             if "invalid command name" in str(exc_value):
                 return
             # Andere Fehler normal loggen
-            self.logger.error(f"Tcl/Tk Fehler: {exc_value}", exc_info=(exc_type, exc_value, exc_tb))
+            if self.logger:
+                self.logger.error(f"Tcl/Tk Fehler: {exc_value}", exc_info=(exc_type, exc_value, exc_tb))
         
         self.temp_root.report_callback_exception = report_callback_exception
-        
-        # Main-Window (wird später erstellt und ist dann das echte Root)
-        self.main_window = None
-        
-        # Splash Screen anzeigen
-        self.splash = SplashScreen(self.temp_root, version=self.VERSION)
-        
-        # Initialisierung nach kurzer Verzögerung (damit Splash Screen sichtbar wird)
-        self.temp_root.after(100, self._initialize)
-
-    def _initialize(self):
-        """Lädt Daten mit Splash-Screen Status-Updates"""
         
         # Standard-CSV laden
         self.splash.update_status("Lade CSV-Datenbank...")
@@ -132,7 +136,8 @@ class Application:
 
     def _show_main_window(self) -> None:
         """Zeigt Main-Window"""
-        # Temp-Root schließen
+        # Temp-Root schließen und mainloop beenden
+        self.temp_root.quit()
         self.temp_root.destroy()
 
         # Main-Window als neues Root erstellen
@@ -151,6 +156,9 @@ class Application:
             self.main_window.report_callback_exception = report_callback_exception
 
         self.logger.info("Main-Window angezeigt")
+        
+        # WICHTIG: MainWindow mainloop starten
+        self.main_window.mainloop()
 
     def _on_new_project(self) -> None:
         """Handler: Neues Projekt erstellen"""
@@ -163,32 +171,111 @@ class Application:
 
     def _on_open_project(self, project_id: str) -> None:
         """Handler: Projekt öffnen"""
-        self.logger.info(f"Öffne Projekt: {project_id}")
+        if self.logger:
+            self.logger.info(f"Öffne Projekt: {project_id}")
 
         success = self.orchestrator.load_project(project_id)
 
         if success:
             self._show_main_window()
         else:
-            self.logger.error(f"Fehler beim Laden von Projekt {project_id}")
+            if self.logger:
+                self.logger.error(f"Fehler beim Laden von Projekt {project_id}")
             # Fallback: Neues Projekt
             self._on_new_project()
 
     def _on_open_file_dialog(self) -> None:
         """Handler: Datei-Dialog für Projekt-Auswahl"""
-        # TODO: Implementiere Dateiauswahl-Dialog
-        self.logger.warning("Datei-Dialog noch nicht implementiert")
-        self._on_new_project()
+        from tkinter import filedialog
+        from pathlib import Path
+        
+        # Letzten verwendeten Pfad aus config.json holen
+        config = self.orchestrator.load_config()
+        
+        # Startverzeichnis bestimmen
+        initial_dir = None
+        
+        # 1. Priorität: Zuletzt verwendetes Verzeichnis (für Öffnen)
+        last_open_dir = config.get('last_open_directory')
+        if last_open_dir:
+            last_dir_path = Path(last_open_dir)
+            if last_dir_path.exists() and last_dir_path.is_dir():
+                initial_dir = str(last_dir_path)
+        
+        # 2. Priorität: Ordner des letzten externen Projekts
+        if not initial_dir:
+            external_paths = config.get('external_project_paths', {})
+            recent_projects = config.get('recent_projects', [])
+            
+            if recent_projects and external_paths:
+                last_id = recent_projects[0]
+                if last_id in external_paths:
+                    last_path = Path(external_paths[last_id])
+                    if last_path.exists():
+                        initial_dir = str(last_path.parent)
+        
+        # 3. Fallback: Benutzer-Home-Verzeichnis (NICHT projects-Ordner!)
+        if not initial_dir:
+            initial_dir = str(Path.home())
+        
+        # Dateiauswahl-Dialog
+        filepath = filedialog.askopenfilename(
+            title="Projekt öffnen",
+            initialdir=initial_dir,
+            filetypes=[
+                ("Projekt-Dateien", "*.json"),
+                ("Alle Dateien", "*.*")
+            ]
+        )
+        
+        if filepath:
+            # Speichere Verzeichnis für nächstes Mal
+            selected_dir = str(Path(filepath).parent)
+            config['last_open_directory'] = selected_dir
+            self.orchestrator.persistence.save_config(config)
+            
+            # Lade Projekt aus Datei
+            try:
+                import json
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                
+                project_id = data.get('id')
+                if project_id:
+                    # Registriere externen Pfad
+                    self.orchestrator.persistence._register_external_project(project_id, filepath)
+                    
+                    # Öffne Projekt
+                    self._on_open_project(project_id)
+                else:
+                    if self.logger:
+                        self.logger.error("Ungültige Projekt-Datei: Keine ID gefunden")
+                    self._on_new_project()
+            except Exception as e:
+                if self.logger:
+                    self.logger.error(f"Fehler beim Öffnen der Projekt-Datei: {e}")
+                self._on_new_project()
+        else:
+            # User hat abgebrochen
+            pass
 
     def run(self) -> None:
         """Startet Hauptschleife"""
         try:
-            self.logger.info("Starte Hauptschleife")
+            if self.logger:
+                self.logger.info("Starte Hauptschleife")
+            # Temp root mainloop für Welcome-Window
             self.temp_root.mainloop()
+            
+            # Nach temp_root.mainloop() endet (durch quit() beim MainWindow-Start)
+            # wird automatisch die MainWindow.mainloop() in _show_main_window() gestartet
+            
         except KeyboardInterrupt:
-            self.logger.info("Programm durch Benutzer beendet")
+            if self.logger:
+                self.logger.info("Programm durch Benutzer beendet")
         except Exception as e:
-            self.logger.error(f"Fehler in Hauptschleife: {e}", exc_info=True)
+            if self.logger:
+                self.logger.error(f"Fehler in Hauptschleife: {e}", exc_info=True)
         finally:
             # Unterdrücke Tcl/Tk Fehler beim Beenden
             from io import StringIO
@@ -201,15 +288,17 @@ class Application:
 
     def _cleanup(self) -> None:
         """Cleanup beim Beenden"""
-        self.logger.info("Cleanup...")
+        if self.logger:
+            self.logger.info("Cleanup...")
 
         try:
             # Konfiguration speichern
-            self.orchestrator.save_config()
+            if self.orchestrator:
+                self.orchestrator.save_config()
 
-            # Aktuelles Projekt speichern
-            if self.orchestrator.state.current_project:
-                self.orchestrator.save_project()
+                # Aktuelles Projekt speichern
+                if self.orchestrator.state.current_project:
+                    self.orchestrator.save_project()
 
             # WICHTIG: Alle geplanten Callbacks abbrechen BEVOR Widgets zerstört werden
             if self.main_window:

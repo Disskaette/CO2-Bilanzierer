@@ -19,7 +19,7 @@ class WelcomeWindow(ctk.CTkToplevel):
     - Buttons: Neues Projekt, Projekt öffnen
     """
 
-    VERSION = "1.0.0"
+    VERSION = "2.0"
 
     def __init__(
         self,

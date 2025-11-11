@@ -186,14 +186,10 @@ class ProjectTreeView(ctk.CTkFrame):
             
             from tkinter import messagebox
             if messagebox.askyesno("Bestätigen", f"Variante '{variant_to_delete.name}' wirklich löschen?"):
-                # Variante löschen
-                project.variants.pop(idx)
-                self.orchestrator.notify_change()
-                self.refresh()
-                self.logger.info(f"Variante gelöscht: {variant_to_delete.name}")
-                
-                # Trigger Event für MainWindow um Tabs neu zu bauen
-                self.orchestrator.state.trigger('variant_deleted', len(project.variants))
+                # Variante über Orchestrator löschen (mit Undo-Support)
+                success = self.orchestrator.delete_variant(idx)
+                if success:
+                    self.refresh()
                 
                 dialog.destroy()
         

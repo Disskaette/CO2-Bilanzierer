@@ -51,16 +51,24 @@ class DashboardView(ctk.CTkFrame):
         header_frame = ctk.CTkFrame(self)
         header_frame.pack(fill="x", padx=10, pady=(10, 5))
 
+        # Label "Projektname:"
+        project_label = ctk.CTkLabel(
+            header_frame,
+            text="Projektname:",
+            font=ctk.CTkFont(size=14, weight="bold")
+        )
+        project_label.pack(side="left", padx=(10, 5), pady=5)
+
         project = self.orchestrator.get_current_project()
         project_name = project.name if project else "Kein Projekt"
 
         self.project_entry = ctk.CTkEntry(
             header_frame,
-            font=ctk.CTkFont(size=18, weight="bold"),
+            font=ctk.CTkFont(size=16, weight="bold"),
             height=40
         )
         self.project_entry.insert(0, project_name)
-        self.project_entry.pack(fill="x", padx=5, pady=5)
+        self.project_entry.pack(side="left", fill="x", expand=True, padx=(0, 10), pady=5)
         self.project_entry.bind("<FocusOut>", self._on_project_name_changed)
         self.project_entry.bind("<Return>", self._on_project_name_changed)
         self.project_entry.bind("<KeyRelease>", self._on_project_name_changed)
@@ -635,16 +643,10 @@ class DashboardView(ctk.CTkFrame):
 
     def _on_project_name_changed(self, event=None) -> None:
         """Projektname wurde geändert"""
-        project = self.orchestrator.get_current_project()
-        if project:
-            new_name = self.project_entry.get().strip()
-            if new_name and new_name != project.name:
-                project.name = new_name
-                self.orchestrator.notify_change()
-                self.logger.info(f"Projektname geändert: {new_name}")
-
-                # Trigger Event für ProjectTree und MainWindow
-                self.orchestrator.state.trigger('project_renamed', new_name)
+        new_name = self.project_entry.get().strip()
+        if new_name:
+            # Über Orchestrator umbenennen (mit Undo-Support)
+            self.orchestrator.rename_project(new_name)
 
     def _on_visibility_changed(self) -> None:
         """Varianten-Sichtbarkeit wurde geändert"""

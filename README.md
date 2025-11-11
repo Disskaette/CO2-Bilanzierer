@@ -291,12 +291,30 @@ Bei Fragen oder Problemen erstellen Sie bitte ein Issue im Repository.
 ## Changelog
 
 ### Version 2.0 (November 2024)
-**🎨 Konsistente Farbverwaltung:**
+**ℹ️ Info-Dialog & PDF-Dokumentation:**
+- **Info-Button** in Menüleiste mit Programminformationen
+- **Normative Grundlagen**: DIN EN 15804, ISO 21931-1, ISO 14040, ISO 14044
+- **Feature-Übersicht** direkt im Dialog
+- **PDF-Opener** für Entwurfstafeln-Dokumentation (in .app Bundle eingebunden)
+
+**🎨 Verbesserte Farb-Konsistenz:**
 - **Zentrale Farbverwaltung** in `orchestrator.py` implementiert
 - **Alphabetische Material-Sortierung** für konsistente Farbzuordnung
+- **Farben basieren auf ALLEN Materialien** im Projekt (nicht nur sichtbare Varianten)
+- **Farben bleiben konstant** beim An-/Abwählen von Dashboard-Varianten
 - **Konsistente Farben** über alle Views: Dashboard, Varianten-GUI und PDF-Export
 - **Manuelle Legenden-Erstellung** in allen Ansichten (keine automatischen Matplotlib-Legenden mehr)
-- Dashboard ist "Source of Truth" für Materialfarben (basierend auf allen sichtbaren Varianten)
+
+**✏️ Umbenennungs-Funktionen:**
+- **Projektnamen ändern** mit Undo-Support
+- **Variantennamen ändern** mit Undo-Support
+- **Label "Projektname:"** vor Eingabefeld für bessere UX
+
+**🔄 Undo/Redo vollständig integriert:**
+- **Separate Undo-Schritte** für "Zeile hinzufügen" und "Material auswählen"
+- **Alle State-Änderungen** unterstützen Undo/Redo
+- **Initialer State** wird nach Projekt-Load gespeichert
+- **Button-Updates** nach jedem Event
 
 **📄 Professioneller PDF-Export:**
 - Komplett neu implementierte PDF-Engine (7 Module)

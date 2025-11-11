@@ -73,10 +73,28 @@ Events:
 
 **PersistenceService** - Speichern/Laden
 - Verzeichnis: ~/.abc_co2_bilanzierer/
-- Projects: JSON-Dateien
+- **Flexible Projektspeicherung:**
+  - Interne Projekte: `~/.abc_co2_bilanzierer/projects/<uuid>.json`
+  - Externe Projekte: Beliebiger Speicherort (Desktop, Cloud, etc.)
+  - UUID-basierte Identifikation (unabhängig vom Dateinamen)
+- **Intelligente Pfadverwaltung:**
+  - `external_project_paths`: Mapping UUID → Dateipfad
+  - Automatische Pfad-Aktualisierung bei Umbenennung/Verschiebung
+  - Sucht nach UUID wenn Datei nicht gefunden
+- **Recent Projects:**
+  - Liste der zuletzt geöffneten Projekte (max. 10)
+  - Automatische Säuberung ungültiger Einträge
+  - Sortierung nach letzter Nutzung
 - Snapshots: Max. 20 pro Projekt
-- **config.json**: Material-Favoriten, CSV-Pfad, Theme, Fenstergrößen
+- **config.json**: Favoriten, CSV-Pfad, Theme, externe Pfade, last_open_directory
 - Auto-Restore beim Start
+
+**UndoRedoManager** - Änderungsverwaltung
+- **Stack-basierte History** mit max. 10 Schritten
+- **Deep Copy** von Project-States für sichere Isolation
+- **Automatische Redo-Löschung** bei neuen Änderungen
+- **Loop-Prevention** beim Anwenden von Undo/Redo
+- Integriert mit allen State-ändernden Operationen
 
 ### Services
 
@@ -124,13 +142,28 @@ calc_gwp(material, quantity, boundary):
 ### UI Layer
 
 **WelcomeWindow** - Startbildschirm
-- Zuletzt geöffnete Projekte
-- Neues Projekt / Projekt öffnen
+- **Liste der zuletzt geöffneten Projekte** (sortiert nach letzter Nutzung)
+- Zeigt interne UND externe Projekte
+- Neues Projekt / Projekt öffnen (mit intelligentem Startverzeichnis)
+- Merkt sich letztes Öffnen-Verzeichnis in `config.json`
 
 **MainWindow** - Hauptfenster
 - Layout: ProjectTree (links) + Tab-Area (rechts)
 - Tabs: Dashboard + 5 Varianten
-- Menü: CSV laden, Export, Theme-Toggle
+- Menü: CSV laden, Export, **Undo/Redo**, **Info**, Theme-Toggle
+- **Info-Dialog**: Programminformationen mit normative Grundlagen, Features und PDF-Opener
+  - Öffnet Entwurfstafeln-PDF per Knopfdruck
+  - PDF wird in .app Bundle eingebunden
+- **Projekt öffnen**: Öffnet ProjectPickerDialog statt einfachem File-Browser
+- **Keyboard-Shortcuts**:
+  - Mac: Cmd+Z (Undo), Cmd+Shift+Z (Redo)
+  - Windows/Linux: Ctrl+Z (Undo), Ctrl+Y / Ctrl+Shift+Z (Redo)
+
+**ProjectPickerDialog** - Projektwechsel im laufenden Programm
+- Liste der zuletzt geöffneten Projekte (wie WelcomeWindow)
+- "Durchsuchen"-Button mit intelligentem Startverzeichnis
+- Zeigt Projektnamen und letzte Änderung
+- Modal-Dialog für schnellen Projektwechsel
 
 **DashboardView** - Vergleichsansicht (Tab 1)
 - Gestapeltes Balkendiagramm mit **zentral verwalteten Farben**
@@ -150,7 +183,11 @@ calc_gwp(material, quantity, boundary):
 - Material-Tabelle (Treeview, 8 Zeilen)
 - **Inline-Mengenbearbeitung** (Doppelklick)
 - Buttons: Add/Delete, Move Up/Down
-- **Summen**: Standard + bio-korrigiert (falls vorhanden)
+- **Intelligente Summen-Anzeige** (Fußzeile):
+  - Zeigt Σ A, Σ A+C, Σ A+C+D (wenn D-Werte vorhanden)
+  - Automatische Umschaltung zwischen Standard/Bio basierend auf Systemgrenze
+  - Bio-Werte in grün angezeigt mit "(bio)" Suffix
+  - Keine doppelte Anzeige mehr
 
 **MaterialPickerDialog** - Materialauswahl
 - Suchfeld + Filter (Typ, Favoriten, **EN 15804+A2**)
@@ -205,14 +242,20 @@ Autosave (nach Debounce):
 **Verzeichnisstruktur:**
 ```
 ~/.abc_co2_bilanzierer/
-├── config.json              # Einstellungen + Favoriten
-├── projects/
-│   └── <uuid>.json         # Projekt-Dateien
+├── config.json              # Einstellungen + Favoriten + Projektverwaltung
+├── projects/                # Interne Projekte (optional)
+│   └── <uuid>.json         # Projekt-Dateien (intern gespeichert)
 ├── snapshots/
 │   └── <project-id>/
 │       └── autosave_*.json # Max. 20
 └── logs/
     └── app.log             # Logging
+
+Externe Projekte:
+Beliebige Speicherorte möglich (Desktop, Cloud-Ordner, USB, etc.)
+- ~/Desktop/MeinProjekt.json
+- ~/iCloud/Projekte/Bauwerk_A.json
+- /Volumes/USB/projekt_xyz.json
 ```
 
 **config.json Struktur:**
@@ -223,7 +266,17 @@ Autosave (nach Debounce):
   "favorites": ["mat-id-1", "mat-id-2"],
   "favorite_names": ["Material Name 1", "Material Name 2"],
   "theme": "dark",
-  "window_size": [1400, 900]
+  "window_size": [1400, 900],
+  "recent_projects": [
+    "uuid-1",
+    "uuid-2",
+    "uuid-3"
+  ],
+  "external_project_paths": {
+    "uuid-1": "/Users/name/Desktop/Projekt_A.json",
+    "uuid-2": "/Users/name/iCloud/Projekt_B.json"
+  },
+  "last_open_directory": "/Users/name/Desktop"
 }
 ```
 
@@ -290,7 +343,7 @@ Bio-korrigierte Deklaration:
 
 ## 7. Zentrale Farbverwaltung (Version 2.0)
 
-**Problem:** Materialien hatten zuvor unterschiedliche Farben in Dashboard, Varianten-GUI und PDF-Export.
+**Problem:** Materialien hatten zuvor unterschiedliche Farben in Dashboard, Varianten-GUI und PDF-Export. Zudem änderten sich Farben beim An-/Abwählen von Varianten im Dashboard.
 
 **Lösung:** Zentrale Farbverwaltung im `AppOrchestrator`
 
@@ -387,5 +440,37 @@ def export_pdf(output_path, ...):
 
 ---
 
-**Version:** 1.0.0  
-**Stand:** November 2024
+**Version:** 2.0  
+**Stand:** November 2024  
+**App-Name:** CO₂-Bilanzierer
+
+**Änderungen in 2.0:**
+- **ℹ️ Info-Dialog** mit Programminformationen
+  - Normative Grundlagen (DIN EN 15804, ISO 21931-1, ISO 14040/14044)
+  - Feature-Übersicht
+  - PDF-Opener für Entwurfstafeln (eingebunden in .app Bundle)
+- **🎨 Farb-Konsistenz verbessert**
+  - Materialfarben basieren auf ALLEN Materialien im Projekt
+  - Farben bleiben konstant beim An-/Abwählen von Dashboard-Varianten
+  - Konsistente Farben über Dashboard, Varianten-Tabs und PDF-Export
+- **✏️ Umbenennungs-Funktionen mit Undo-Support**
+  - Projektnamen ändern (mit Undo)
+  - Variantennamen ändern (mit Undo)
+  - Label "Projektname:" vor Eingabefeld für bessere UX
+
+**Änderungen in 1.3.0:**
+- **🔄 Undo/Redo-System** (max. 10 Schritte)
+  - Stack-basierte History mit Deep Copy
+  - Keyboard-Shortcuts (Cmd+Z / Ctrl+Z)
+  - Zentrierte Buttons in Menüleiste
+  - Loop-Prevention und automatisches Redo-Clearing
+  - Integration mit allen State-ändernden Operationen
+  - Separate Undo-Schritte für Zeile hinzufügen und Material auswählen
+
+**Änderungen in 1.2.0:**
+- Flexible UUID-basierte Projektverwaltung
+- Externe Projekte mit automatischer Pfad-Aktualisierung
+- "Speichern unter" erstellt neues unabhängiges Projekt
+- ProjectPickerDialog für schnellen Projektwechsel
+- Intelligente Summen-Anzeige mit Auto-Umschaltung Standard/Bio
+- A+C+D Summe in Fußzeile

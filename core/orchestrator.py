@@ -12,6 +12,7 @@ from models.project import Project
 from models.variant import Variant, MaterialRow
 from models.material import Material
 from core.persistence import PersistenceService
+from core.undo_redo_manager import UndoRedoManager
 from data.material_repository import MaterialRepository
 from services.calculation_service import CalculationService
 
@@ -71,10 +72,14 @@ class AppOrchestrator:
         self.material_repo = MaterialRepository()
         self.calc_service = CalculationService()
         self.state = StateStore()
+        self.undo_redo_manager = UndoRedoManager(max_history=10)
         
         # Autosave-Timer
         self._autosave_timer: Optional[threading.Timer] = None
         self._autosave_delay = 0.8  # Sekunden
+        
+        # Flag um Undo/Redo-Loop zu vermeiden
+        self._applying_undo_redo = False
         
         self.logger = logger
         self.logger.info("AppOrchestrator initialisiert")
@@ -93,8 +98,14 @@ class AppOrchestrator:
         Returns:
             Neues Project-Objekt
         """
+        # Undo/Redo History löschen beim Erstellen eines neuen Projekts
+        self.undo_redo_manager.clear()
+        
         project = Project(name=name)
         self.state.current_project = project
+        
+        # Initialen State für Undo speichern
+        self.undo_redo_manager.push_state(project)
         
         self.logger.info(f"Neues Projekt erstellt: {name}")
         return project
@@ -115,6 +126,9 @@ class AppOrchestrator:
             self.logger.error(f"Projekt nicht gefunden: {project_id}")
             return False
         
+        # Undo/Redo History löschen beim Laden eines neuen Projekts
+        self.undo_redo_manager.clear()
+        
         self.state.current_project = project
         
         # CSV neu laden wenn Projekt CSV-Pfad hat
@@ -125,6 +139,12 @@ class AppOrchestrator:
             # Sanfte Aktualisierung: Materialnamen aus aktueller CSV holen
             # OHNE alte Materialien zu löschen die nicht mehr in CSV sind
             self._update_material_names_from_csv(project)
+        
+        # Initialen State für Undo speichern (damit erste Änderung rückgängig gemacht werden kann)
+        self.undo_redo_manager.push_state(project)
+        
+        # Recent Projects Liste aktualisieren
+        self._update_recent_projects(project_id)
         
         self.logger.info(f"Projekt geladen: {project.name}")
         self.state.trigger('project_loaded', project)
@@ -188,7 +208,8 @@ class AppOrchestrator:
     
     def save_project_as(self, filepath: str) -> bool:
         """
-        Speichert Projekt unter benutzerdefiniertem Pfad
+        Speichert Projekt unter benutzerdefiniertem Pfad als NEUES Projekt
+        Generiert eine neue UUID um ein unabhängiges Projekt zu erstellen
         
         Args:
             filepath: Vollständiger Dateipfad
@@ -200,11 +221,25 @@ class AppOrchestrator:
             self.logger.warning("Kein Projekt zum Speichern vorhanden")
             return False
         
+        import uuid
+        
+        # Alte UUID merken für Logging
+        old_id = self.state.current_project.id
+        
+        # Neue UUID generieren -> Neues, unabhängiges Projekt!
+        new_id = str(uuid.uuid4())
+        self.state.current_project.id = new_id
+        
+        self.logger.info(f"Speichern unter: Neues Projekt erstellt (alte UUID: {old_id[:8]}, neue UUID: {new_id[:8]})")
+        
         success = self.persistence.save_project(self.state.current_project, custom_path=filepath)
         
         if success:
             # Auch Snapshot speichern
             self.persistence.save_snapshot(self.state.current_project)
+            
+            # Recent Projects Liste aktualisieren (wichtig für externe Pfade!)
+            self._update_recent_projects(self.state.current_project.id)
         
         return success
     
@@ -379,6 +414,9 @@ class AppOrchestrator:
         if not self.state.current_project:
             return None
         
+        # State für Undo speichern
+        self._save_state_for_undo()
+        
         variant = Variant(name=name)
         
         if self.state.current_project.add_variant(variant):
@@ -386,6 +424,104 @@ class AppOrchestrator:
             return variant
         
         return None
+    
+    def delete_variant(self, variant_index: int) -> bool:
+        """
+        Löscht Variante
+        
+        Args:
+            variant_index: Index der zu löschenden Variante
+        
+        Returns:
+            True bei Erfolg
+        """
+        if not self.state.current_project:
+            return False
+        
+        if variant_index < 0 or variant_index >= len(self.state.current_project.variants):
+            return False
+        
+        # State für Undo speichern
+        self._save_state_for_undo()
+        
+        # Variante löschen
+        deleted_variant = self.state.current_project.variants.pop(variant_index)
+        
+        self.notify_change()
+        self.state.trigger('variant_deleted', len(self.state.current_project.variants))
+        
+        self.logger.info(f"Variante gelöscht: {deleted_variant.name}")
+        return True
+    
+    def rename_project(self, new_name: str) -> bool:
+        """
+        Benennt Projekt um
+        
+        Args:
+            new_name: Neuer Projektname
+        
+        Returns:
+            True bei Erfolg
+        """
+        if not self.state.current_project:
+            return False
+        
+        if not new_name or not new_name.strip():
+            return False
+        
+        new_name = new_name.strip()
+        
+        # Keine Änderung
+        if new_name == self.state.current_project.name:
+            return False
+        
+        # State für Undo speichern
+        self._save_state_for_undo()
+        
+        old_name = self.state.current_project.name
+        self.state.current_project.name = new_name
+        
+        self.notify_change()
+        self.state.trigger('project_renamed', new_name)
+        
+        self.logger.info(f"Projekt umbenannt: '{old_name}' → '{new_name}'")
+        return True
+    
+    def rename_variant(self, variant_index: int, new_name: str) -> bool:
+        """
+        Benennt Variante um
+        
+        Args:
+            variant_index: Index der Variante
+            new_name: Neuer Variantenname
+        
+        Returns:
+            True bei Erfolg
+        """
+        variant = self.get_variant(variant_index)
+        if not variant:
+            return False
+        
+        if not new_name or not new_name.strip():
+            return False
+        
+        new_name = new_name.strip()
+        
+        # Keine Änderung
+        if new_name == variant.name:
+            return False
+        
+        # State für Undo speichern
+        self._save_state_for_undo()
+        
+        old_name = variant.name
+        variant.name = new_name
+        
+        self.notify_change()
+        self.state.trigger('variant_renamed', variant_index, new_name)
+        
+        self.logger.info(f"Variante umbenannt: '{old_name}' → '{new_name}'")
+        return True
     
     # ========================================================================
     # MATERIALZEILEN-VERWALTUNG
@@ -404,6 +540,9 @@ class AppOrchestrator:
         variant = self.get_variant(variant_index)
         if not variant:
             return None
+        
+        # State für Undo speichern
+        self._save_state_for_undo()
         
         row = MaterialRow()
         variant.add_row(row)
@@ -440,6 +579,9 @@ class AppOrchestrator:
         if not row:
             return False
         
+        # State für Undo speichern
+        self._save_state_for_undo()
+        
         # Material aktualisieren
         if material:
             self.calc_service.update_material_row(row, material, quantity)
@@ -471,6 +613,9 @@ class AppOrchestrator:
         if not variant:
             return False
         
+        # State für Undo speichern
+        self._save_state_for_undo()
+        
         variant.remove_row(row_id)
         variant.calculate_sums()
         
@@ -485,6 +630,9 @@ class AppOrchestrator:
         if not variant:
             return False
         
+        # State für Undo speichern
+        self._save_state_for_undo()
+        
         variant.move_row_up(row_id)
         self.notify_change()
         self.state.trigger('row_moved', variant_index)
@@ -496,6 +644,9 @@ class AppOrchestrator:
         variant = self.get_variant(variant_index)
         if not variant:
             return False
+        
+        # State für Undo speichern
+        self._save_state_for_undo()
         
         variant.move_row_down(row_id)
         self.notify_change()
@@ -509,25 +660,29 @@ class AppOrchestrator:
     
     def set_system_boundary(self, boundary: str) -> None:
         """
-        Setzt Systemgrenze
+        Setzt Systemgrenze für alle Varianten
         
         Args:
-            boundary: "A1-A3", "A1-A3+C3+C4", "A1-A3+C3+C4+D"
+            boundary: Systemgrenze ("A", "A+C", "A+C+D", mit optionalem " (bio)")
         """
         if self.state.current_project:
+            # State für Undo speichern
+            self._save_state_for_undo()
+            
             self.state.current_project.system_boundary = boundary
             self.notify_change()
             self.state.trigger('boundary_changed', boundary)
     
     def set_variant_visibility(self, index: int, visible: bool) -> None:
-        """
-        Setzt Sichtbarkeit einer Variante im Vergleichsdiagramm
-        
-        Args:
-            index: Varianten-Index
-            visible: Sichtbar ja/nein
-        """
+        """Setzt Sichtbarkeit einer Variante im Dashboard"""
         if self.state.current_project:
+            # State für Undo speichern
+            self._save_state_for_undo()
+            
+            # Ensure visible_variants list exists and has correct length
+            if not hasattr(self.state.current_project, 'visible_variants'):
+                self.state.current_project.visible_variants = []
+            
             while len(self.state.current_project.visible_variants) <= index:
                 self.state.current_project.visible_variants.append(True)
             
@@ -580,10 +735,12 @@ class AppOrchestrator:
     
     def update_material_colors(self, visible_variant_indices: Optional[List[int]] = None) -> None:
         """
-        Aktualisiert die zentrale Materialfarb-Zuordnung basierend auf sichtbaren Varianten
+        Aktualisiert die zentrale Materialfarb-Zuordnung basierend auf ALLEN Materialien im Projekt.
+        Dies sorgt für konsistente Farben, unabhängig von der Sichtbarkeit der Varianten.
         
         Args:
-            visible_variant_indices: Liste der sichtbaren Varianten-Indices (None = alle)
+            visible_variant_indices: Liste der sichtbaren Varianten-Indices (wird für Kompatibilität
+                                    akzeptiert, aber ignoriert - Farben basieren immer auf allen Materialien)
         """
         import matplotlib.pyplot as plt
         
@@ -591,15 +748,15 @@ class AppOrchestrator:
         if not project or not project.variants:
             return
         
-        # Sammle alle Materialien aus sichtbaren Varianten
+        # Sammle ALLE Materialien aus ALLEN Varianten im Projekt
+        # (nicht nur aus sichtbaren, damit Farben konsistent bleiben)
         all_materials = set()
-        for i, variant in enumerate(project.variants):
-            if visible_variant_indices is None or i in visible_variant_indices:
-                for row in variant.rows:
-                    if row.material_name:
-                        all_materials.add(row.material_name)
+        for variant in project.variants:
+            for row in variant.rows:
+                if row.material_name:
+                    all_materials.add(row.material_name)
         
-        # Farben zuweisen (konsistent über alle Diagramme)
+        # Farben zuweisen (konsistent über alle Diagramme und Sichtbarkeiten)
         colors = plt.cm.tab20.colors
         self.state.material_colors.clear()
         sorted_materials = sorted(all_materials)
@@ -656,12 +813,18 @@ class AppOrchestrator:
         # Speichere nur die Top 30 häufigsten Materialien
         usage_dict = dict(self.material_repo.usage_counter.most_common(30))
         
+        # Lade bestehende config um recent_projects, external_paths und last_open_directory zu erhalten
+        existing_config = self.load_config()
+        
         config = {
             'last_project_id': (
                 self.state.current_project.id
                 if self.state.current_project
                 else None
             ),
+            'recent_projects': existing_config.get('recent_projects', []),
+            'external_project_paths': existing_config.get('external_project_paths', {}),
+            'last_open_directory': existing_config.get('last_open_directory'),  # Bewahre letztes Verzeichnis
             'global_csv_path': (
                 self.material_repo.csv_path
                 if self.material_repo.csv_path
@@ -680,6 +843,140 @@ class AppOrchestrator:
         """Lädt Konfiguration"""
         return self.persistence.load_config()
     
+    def _update_recent_projects(self, project_id: str) -> None:
+        """Aktualisiert Liste der zuletzt verwendeten Projekte"""
+        try:
+            config = self.load_config()
+            recent = config.get('recent_projects', [])
+            
+            # Entferne Projekt falls bereits in Liste
+            if project_id in recent:
+                recent.remove(project_id)
+            
+            # Füge an erster Stelle ein
+            recent.insert(0, project_id)
+            
+            # Behalte nur die letzten 10
+            recent = recent[:10]
+            
+            # Speichere zurück
+            config['recent_projects'] = recent
+            self.persistence.save_config(config)
+            
+            self.logger.info(f"Recent Projects aktualisiert: {project_id} ist jetzt #1 von {len(recent)}")
+            
+        except Exception as e:
+            self.logger.warning(f"Fehler beim Aktualisieren der Recent Projects: {e}")
+    
     def get_log_path(self) -> str:
         """Gibt Log-Pfad zurück"""
         return str(self.persistence.get_log_path())
+    
+    # ========================================================================
+    # UNDO / REDO
+    # ========================================================================
+    
+    def _save_state_for_undo(self) -> None:
+        """
+        Speichert aktuellen Project-State für Undo.
+        Muss VOR jeder State-Änderung aufgerufen werden.
+        """
+        # Nicht speichern wenn wir gerade Undo/Redo anwenden
+        if self._applying_undo_redo:
+            return
+        
+        # Nur speichern wenn Projekt vorhanden
+        if not self.state.current_project:
+            return
+        
+        # State in Undo-Manager pushen
+        self.undo_redo_manager.push_state(self.state.current_project)
+        self.logger.debug("State für Undo gespeichert")
+    
+    def perform_undo(self) -> bool:
+        """
+        Macht letzte Änderung rückgängig.
+        
+        Returns:
+            True wenn Undo durchgeführt wurde, False wenn nicht möglich
+        """
+        if not self.undo_redo_manager.can_undo():
+            self.logger.debug("Undo nicht möglich (keine History)")
+            return False
+        
+        # Flag setzen um Loop zu vermeiden
+        self._applying_undo_redo = True
+        
+        try:
+            # Vorherigen State vom Manager holen
+            previous_state = self.undo_redo_manager.undo()
+            
+            if previous_state:
+                # State wiederherstellen
+                self.state.current_project = previous_state
+                
+                # UI aktualisieren
+                self.state.trigger('project_loaded', previous_state)
+                self.state.trigger('undo_performed')
+                
+                # Autosave triggern (State ist jetzt anders)
+                self.notify_change()
+                
+                self.logger.info("Undo durchgeführt")
+                return True
+            
+            return False
+            
+        finally:
+            # Flag zurücksetzen
+            self._applying_undo_redo = False
+    
+    def perform_redo(self) -> bool:
+        """
+        Stellt rückgängig gemachte Änderung wieder her.
+        
+        Returns:
+            True wenn Redo durchgeführt wurde, False wenn nicht möglich
+        """
+        if not self.undo_redo_manager.can_redo():
+            self.logger.debug("Redo nicht möglich (keine Redo-History)")
+            return False
+        
+        # Flag setzen um Loop zu vermeiden
+        self._applying_undo_redo = True
+        
+        try:
+            # Nächsten State vom Manager holen
+            next_state = self.undo_redo_manager.redo()
+            
+            if next_state:
+                # State wiederherstellen
+                self.state.current_project = next_state
+                
+                # UI aktualisieren
+                self.state.trigger('project_loaded', next_state)
+                self.state.trigger('redo_performed')
+                
+                # Autosave triggern (State ist jetzt anders)
+                self.notify_change()
+                
+                self.logger.info("Redo durchgeführt")
+                return True
+            
+            return False
+            
+        finally:
+            # Flag zurücksetzen
+            self._applying_undo_redo = False
+    
+    def can_undo(self) -> bool:
+        """Prüft ob Undo möglich ist"""
+        return self.undo_redo_manager.can_undo()
+    
+    def can_redo(self) -> bool:
+        """Prüft ob Redo möglich ist"""
+        return self.undo_redo_manager.can_redo()
+    
+    def get_undo_redo_info(self) -> dict:
+        """Gibt Undo/Redo Debug-Informationen zurück"""
+        return self.undo_redo_manager.get_history_info()

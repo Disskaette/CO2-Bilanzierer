@@ -114,13 +114,10 @@ class VariantView(ctk.CTkFrame):
         project = self.orchestrator.get_current_project()
         boundary = project.system_boundary if project else "A1-A3"
         
-        # WICHTIG: Farben NICHT neu setzen, wenn bereits vom Dashboard gesetzt!
-        # Das Dashboard setzt die Farben für ALLE sichtbaren Varianten.
-        # Wenn wir hier neu setzen würden, würden wir nur die Materialien DIESER Variante verwenden
-        # und damit andere Farben bekommen als im Dashboard!
-        if not self.orchestrator.state.material_colors:
-            # Nur wenn noch keine Farben gesetzt sind, setze sie jetzt
-            self.orchestrator.update_material_colors([self.variant_index])
+        # WICHTIG: Varianten-View setzt IMMER Farben für ihre Materialien
+        # Dadurch sind die Farben konsistent, unabhängig von Dashboard-Checkboxen
+        # Die Farben werden basierend auf ALLEN Materialien in dieser Variante gesetzt
+        self.orchestrator.update_material_colors([self.variant_index])
 
         # Daten sammeln - aggregiere doppelte Materialien
         material_values = {}
@@ -466,62 +463,58 @@ class VariantView(ctk.CTkFrame):
         down_btn.pack(side="left", padx=2)
 
     def _create_sums(self, parent: ctk.CTkFrame, variant) -> None:
-        """Erstellt Summenzeilen (Standard und bio-korrigiert)"""
+        """Erstellt Summenzeilen - schaltet automatisch zwischen Standard und bio um"""
 
         sum_frame = ctk.CTkFrame(parent)
         sum_frame.pack(side="right", padx=10, pady=5)
-
-        # Standard-Deklaration (EN 15804+A2) - Schlanke Beschriftung
+        
+        # Prüfe ob biogenic Systemgrenze gewählt ist
+        project = self.orchestrator.get_current_project()
+        use_biogenic = "(bio)" in project.system_boundary if project else False
+        
+        # Wähle die richtigen Werte basierend auf Systemgrenze
+        if use_biogenic and variant.sum_a_bio is not None:
+            # Bio-Werte verwenden
+            sum_a = variant.sum_a_bio
+            sum_ac = variant.sum_ac_bio
+            sum_acd = variant.sum_acd_bio
+            color = "lightgreen"
+            suffix = " (bio)"
+        else:
+            # Standard-Werte verwenden
+            sum_a = variant.sum_a
+            sum_ac = variant.sum_ac
+            sum_acd = variant.sum_acd
+            color = None  # Default color
+            suffix = ""
+        
+        # Summe A
         sum_a_label = ctk.CTkLabel(
             sum_frame,
-            text=f"Σ A: {variant.sum_a / 1000.0:.2f} t",
-            font=ctk.CTkFont(size=12, weight="bold")
+            text=f"Σ A{suffix}: {sum_a / 1000.0:.2f} t",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color=color
         )
         sum_a_label.pack(side="left", padx=8)
 
+        # Summe A+C
         sum_ac_label = ctk.CTkLabel(
             sum_frame,
-            text=f"Σ A+C: {variant.sum_ac / 1000.0:.2f} t",
-            font=ctk.CTkFont(size=12, weight="bold")
+            text=f"Σ A+C{suffix}: {sum_ac / 1000.0:.2f} t",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color=color
         )
         sum_ac_label.pack(side="left", padx=8)
 
-        # ACD-Summe (falls vorhanden)
-        if variant.sum_acd is not None:
+        # Summe A+C+D (falls vorhanden)
+        if sum_acd is not None:
             sum_acd_label = ctk.CTkLabel(
                 sum_frame,
-                text=f"Σ A+C+D: {variant.sum_acd / 1000.0:.2f} t",
-                font=ctk.CTkFont(size=12, weight="bold")
+                text=f"Σ A+C+D{suffix}: {sum_acd / 1000.0:.2f} t",
+                font=ctk.CTkFont(size=12, weight="bold"),
+                text_color=color
             )
             sum_acd_label.pack(side="left", padx=8)
-
-        # Bio-korrigierte Werte (falls vorhanden)
-        if variant.sum_a_bio is not None:
-            sum_a_bio_label = ctk.CTkLabel(
-                sum_frame,
-                text=f"Σ A (bio): {variant.sum_a_bio / 1000.0:.2f} t",
-                font=ctk.CTkFont(size=12, weight="bold"),
-                text_color="lightgreen"
-            )
-            sum_a_bio_label.pack(side="left", padx=8)
-
-        if variant.sum_ac_bio is not None:
-            sum_ac_bio_label = ctk.CTkLabel(
-                sum_frame,
-                text=f"Σ A+C (bio): {variant.sum_ac_bio / 1000.0:.2f} t",
-                font=ctk.CTkFont(size=12, weight="bold"),
-                text_color="lightgreen"
-            )
-            sum_ac_bio_label.pack(side="left", padx=8)
-
-        if variant.sum_acd_bio is not None:
-            sum_acd_bio_label = ctk.CTkLabel(
-                sum_frame,
-                text=f"Σ A+C+D (bio): {variant.sum_acd_bio / 1000.0:.2f} t",
-                font=ctk.CTkFont(size=12, weight="bold"),
-                text_color="lightgreen"
-            )
-            sum_acd_bio_label.pack(side="left", padx=8)
 
     def refresh_chart(self) -> None:
         """Aktualisiert nur das Diagramm"""
@@ -558,6 +551,10 @@ class VariantView(ctk.CTkFrame):
         """Fügt neue Zeile hinzu"""
         row = self.orchestrator.add_material_row(self.variant_index)
         if row:
+            # Wichtig: State NACH dem Hinzufügen der Zeile speichern,
+            # damit Zeile-Hinzufügen und Material-Auswahl separate Undo-Schritte sind
+            self.orchestrator._save_state_for_undo()
+            
             # Material-Picker öffnen
             self._open_material_picker(row.id)
 
@@ -635,16 +632,11 @@ class VariantView(ctk.CTkFrame):
 
     def _on_name_changed(self, event=None) -> None:
         """Varianten-Name wurde geändert"""
-        variant = self.orchestrator.get_variant(self.variant_index)
-        if variant and hasattr(self, 'name_entry'):
+        if hasattr(self, 'name_entry'):
             new_name = self.name_entry.get().strip()
-            if new_name and new_name != variant.name:
-                variant.name = new_name
-                self.orchestrator.notify_change()
-
-                # Trigger Tab-Rebuild in MainWindow
-                self.orchestrator.state.trigger(
-                    'variant_renamed', self.variant_index)
+            if new_name:
+                # Über Orchestrator umbenennen (mit Undo-Support)
+                self.orchestrator.rename_variant(self.variant_index, new_name)
 
     def _edit_quantity(self, row_id: str) -> None:
         """Inline-Bearbeitung der Menge (kein Dialog mehr)"""

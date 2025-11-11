@@ -106,13 +106,30 @@ class PersistenceService:
             if custom_path:
                 # Benutzerdefinierter Pfad (Speichern unter)
                 project_file = Path(custom_path)
-            else:
-                # Standard: Projektname_ID.json
-                filename = self._sanitize_filename(project.name, project.id)
-                project_file = self.projects_path / f"{filename}.json"
                 
-                # Speichere Pfad im Projekt für spätere Nutzung
-                project.file_path = str(project_file)
+                # Speichere externen Pfad in config.json
+                self._register_external_project(project.id, str(project_file))
+            else:
+                # Prüfe ob Projekt bereits als extern registriert ist
+                config = self.load_config()
+                external_paths = config.get('external_project_paths', {})
+                
+                if project.id in external_paths:
+                    # Projekt ist extern → Speichere an externem Pfad
+                    external_file = Path(external_paths[project.id])
+                    if external_file.exists() or external_file.parent.exists():
+                        project_file = external_file
+                    else:
+                        # Externer Pfad existiert nicht mehr → Fallback zu Standard
+                        filename = self._sanitize_filename(project.name, project.id)
+                        project_file = self.projects_path / f"{filename}.json"
+                else:
+                    # Standard: Projektname_ID.json
+                    filename = self._sanitize_filename(project.name, project.id)
+                    project_file = self.projects_path / f"{filename}.json"
+                    
+                    # Speichere Pfad im Projekt für spätere Nutzung
+                    project.file_path = str(project_file)
             
             # Zeitstempel aktualisieren
             project.update_timestamp()
@@ -134,7 +151,7 @@ class PersistenceService:
     
     def load_project(self, project_id: str) -> Optional[Project]:
         """
-        Lädt Projekt aus JSON
+        Lädt Projekt aus JSON (sucht in Standard-Ordner und externen Pfaden)
         
         Args:
             project_id: ID des zu ladenden Projekts
@@ -165,6 +182,16 @@ class PersistenceService:
                                 break
                         except Exception:
                             continue
+            
+            # Falls immer noch nicht gefunden: Prüfe externe Pfade
+            if not project_file.exists():
+                config = self.load_config()
+                external_paths = config.get('external_project_paths', {})
+                
+                if project_id in external_paths:
+                    external_file = Path(external_paths[project_id])
+                    if external_file.exists():
+                        project_file = external_file
             
             if not project_file.exists():
                 self.logger.warning(f"Projekt nicht gefunden: {project_id}")
@@ -304,35 +331,142 @@ class PersistenceService:
     
     def list_projects(self) -> List[Dict[str, Any]]:
         """
-        Listet alle vorhandenen Projekte auf
+        Listet alle vorhandenen Projekte auf (inkl. externe Pfade)
+        Sortiert nach recent_projects Liste aus config.json
         
         Returns:
-            Liste mit Projekt-Metadaten (id, name, updated_at)
+            Liste mit Projekt-Metadaten (id, name, updated_at), sortiert nach Nutzung
         """
         projects = []
+        seen_ids = set()
+        projects_by_id = {}  # Zum schnellen Lookup
         
         try:
+            # 1. Projekte im Standard-Ordner
             for project_file in self.projects_path.glob("*.json"):
                 try:
                     with open(project_file, 'r', encoding='utf-8') as f:
                         data = json.load(f)
                     
-                    projects.append({
-                        'id': data.get('id', ''),
+                    project_id = data.get('id', '')
+                    if project_id:
+                        seen_ids.add(project_id)
+                    
+                    project_data = {
+                        'id': project_id,
                         'name': data.get('name', 'Unbenannt'),
                         'updated_at': data.get('updated_at', ''),
                         'created_at': data.get('created_at', '')
-                    })
+                    }
+                    projects.append(project_data)
+                    if project_id:
+                        projects_by_id[project_id] = project_data
                 except Exception as e:
                     self.logger.warning(
                         f"Fehler beim Lesen von {project_file.name}: {e}"
                     )
             
-            # Nach Datum sortieren (neueste zuerst)
-            projects.sort(
-                key=lambda p: p.get('updated_at', ''),
-                reverse=True
-            )
+            # 2. Extern gespeicherte Projekte aus config.json
+            config = self.load_config()
+            external_paths = config.get('external_project_paths', {})
+            updated_external_paths = {}
+            
+            for project_id, filepath in external_paths.items():
+                # Überspringe bereits geladene IDs (aus projects-Ordner)
+                if project_id in seen_ids:
+                    # Prüfe ob externe Datei noch existiert, wenn nicht: aus config entfernen
+                    if Path(filepath).exists():
+                        updated_external_paths[project_id] = filepath
+                    continue
+                    
+                try:
+                    project_file = Path(filepath)
+                    
+                    # Falls Datei nicht existiert: Suche nach umbenannter/verschobener Datei mit gleicher UUID
+                    if not project_file.exists():
+                        # Suche im gleichen Verzeichnis nach JSON-Dateien mit dieser UUID
+                        parent_dir = project_file.parent
+                        if parent_dir.exists():
+                            for candidate in parent_dir.glob("*.json"):
+                                try:
+                                    with open(candidate, 'r', encoding='utf-8') as f:
+                                        data = json.load(f)
+                                    if data.get('id') == project_id:
+                                        # Gefunden! Aktualisiere Pfad
+                                        project_file = candidate
+                                        updated_external_paths[project_id] = str(candidate)
+                                        self.logger.info(f"Externe Projektdatei gefunden (umbenannt): {candidate.name}")
+                                        break
+                                except Exception:
+                                    continue
+                        
+                        # Immer noch nicht gefunden? Überspringe
+                        if not project_file.exists():
+                            self.logger.warning(f"Externe Projektdatei nicht mehr vorhanden: {filepath}")
+                            continue
+                    else:
+                        updated_external_paths[project_id] = filepath
+                        
+                    with open(project_file, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                    
+                    project_data = {
+                        'id': data.get('id', ''),
+                        'name': data.get('name', 'Unbenannt'),
+                        'updated_at': data.get('updated_at', ''),
+                        'created_at': data.get('created_at', ''),
+                        'external': True  # Markiere als extern
+                    }
+                    projects.append(project_data)
+                    projects_by_id[project_id] = project_data
+                except Exception as e:
+                    self.logger.warning(
+                        f"Fehler beim Lesen von externem Projekt {filepath}: {e}"
+                    )
+            
+            # Speichere aktualisierte externe Pfade (falls welche umbenannt wurden)
+            if updated_external_paths != external_paths:
+                config['external_project_paths'] = updated_external_paths
+                self.save_config(config)
+                self.logger.info("Externe Projekt-Pfade aktualisiert")
+            
+            # 3. Sortiere nach recent_projects Liste
+            recent_ids = config.get('recent_projects', [])
+            
+            # Säubere recent_ids: Nur gültige Projekt-IDs behalten (die tatsächlich existieren)
+            valid_recent_ids = [pid for pid in recent_ids if pid in projects_by_id]
+            
+            # Falls ungültige Einträge entfernt wurden, speichere bereinigte Liste
+            if len(valid_recent_ids) != len(recent_ids):
+                config['recent_projects'] = valid_recent_ids
+                self.save_config(config)
+                self.logger.info(f"Recent Projects bereinigt: {len(recent_ids) - len(valid_recent_ids)} ungültige Einträge entfernt")
+            
+            if valid_recent_ids:
+                # Erstelle sortierte Liste: erst recent, dann restliche
+                sorted_projects = []
+                
+                # Zuerst: Projekte aus recent_projects (in dieser Reihenfolge)
+                for project_id in valid_recent_ids:
+                    if project_id in projects_by_id:
+                        sorted_projects.append(projects_by_id[project_id])
+                
+                # Dann: Restliche Projekte (nach Datum sortiert)
+                remaining = [p for p in projects if p['id'] not in valid_recent_ids]
+                
+                remaining.sort(
+                    key=lambda p: p.get('updated_at', ''),
+                    reverse=True
+                )
+                sorted_projects.extend(remaining)
+                
+                projects = sorted_projects
+            else:
+                # Fallback: Nach Datum sortieren
+                projects.sort(
+                    key=lambda p: p.get('updated_at', ''),
+                    reverse=True
+                )
             
         except Exception as e:
             self.logger.error(f"Fehler beim Listen der Projekte: {e}")
@@ -410,6 +544,21 @@ class PersistenceService:
         except Exception as e:
             self.logger.warning(f"Fehler beim Laden der Konfiguration: {e}")
             return {}
+    
+    def _register_external_project(self, project_id: str, filepath: str) -> None:
+        """Registriert externen Projekt-Pfad in config.json"""
+        try:
+            config = self.load_config()
+            
+            if 'external_project_paths' not in config:
+                config['external_project_paths'] = {}
+            
+            config['external_project_paths'][project_id] = filepath
+            self.save_config(config)
+            
+            self.logger.info(f"Externer Projekt-Pfad registriert: {filepath}")
+        except Exception as e:
+            self.logger.warning(f"Fehler beim Registrieren des externen Pfads: {e}")
     
     def get_log_path(self) -> Path:
         """Gibt Pfad zum Log-Verzeichnis zurück"""
