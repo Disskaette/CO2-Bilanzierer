@@ -83,7 +83,7 @@ class MaterialPickerDialog(ctk.CTkToplevel):
         self.search_entry = ctk.CTkEntry(
             filter_frame,
             placeholder_text="Materialname, ID, Quelle...",
-            width=300
+            width=250
         )
         self.search_entry.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
         self.search_entry.bind("<KeyRelease>", lambda e: self._perform_search())
@@ -115,6 +115,16 @@ class MaterialPickerDialog(ctk.CTkToplevel):
         )
         self.en15804_cb.grid(row=0, column=4, padx=10, pady=5)
         
+        # Eigene Materialien Checkbox
+        self.custom_materials_var = ctk.BooleanVar(value=False)
+        self.custom_materials_cb = ctk.CTkCheckBox(
+            filter_frame,
+            text="Eigene Materialien",
+            variable=self.custom_materials_var,
+            command=self._perform_search
+        )
+        self.custom_materials_cb.grid(row=0, column=5, padx=10, pady=5)
+        
         # Button: Eigenes Material
         custom_btn = ctk.CTkButton(
             filter_frame,
@@ -123,7 +133,7 @@ class MaterialPickerDialog(ctk.CTkToplevel):
             command=self._on_add_custom_material,
             fg_color="darkgreen"
         )
-        custom_btn.grid(row=0, column=5, padx=10, pady=5)
+        custom_btn.grid(row=0, column=6, padx=10, pady=5)
         
         filter_frame.columnconfigure(1, weight=1)
         
@@ -249,6 +259,7 @@ class MaterialPickerDialog(ctk.CTkToplevel):
         query = self.search_entry.get()
         dataset_type = self.type_combo.get()
         en15804_a2_only = self.en15804_var.get()
+        custom_materials_only = self.custom_materials_var.get()
         
         # Prüfen welcher Tab aktiv ist
         active_tab = self.tab_view.get()
@@ -276,6 +287,9 @@ class MaterialPickerDialog(ctk.CTkToplevel):
                 
                 if en15804_a2_only:
                     results = [mat for mat in results if mat.is_en15804_a2()]
+                
+                if custom_materials_only:
+                    results = [mat for mat in results if mat.is_custom]
             else:
                 # Normale Suche (Alle Materialien oder Favoriten)
                 results = self.orchestrator.search_materials(
@@ -284,6 +298,10 @@ class MaterialPickerDialog(ctk.CTkToplevel):
                     favorites_only=favorites_only,
                     en15804_a2_only=en15804_a2_only
                 )
+                
+                # Eigene Materialien Filter
+                if custom_materials_only:
+                    results = [mat for mat in results if mat.is_custom]
             
             self.search_results = results
             
@@ -316,11 +334,11 @@ class MaterialPickerDialog(ctk.CTkToplevel):
             # Prüfen ob Favorit
             is_fav = self.orchestrator.material_repo.is_favorite(mat.id)
             
-            # Icon: Custom=🔧, Favorit=★, Normal=☆
-            if mat.is_custom:
-                icon = "🔧"
-            elif is_fav:
+            # Icon: Favorit=★, Custom (nicht Favorit)=🔧, Normal=☆
+            if is_fav:
                 icon = "★"
+            elif mat.is_custom:
+                icon = "🔧"
             else:
                 icon = "☆"
             
@@ -382,10 +400,10 @@ class MaterialPickerDialog(ctk.CTkToplevel):
                             # Kein Filter aktiv: Nur Icon in der Zeile aktualisieren
                             # -> Viel schneller!
                             is_now_favorite = not was_favorite
-                            if mat.is_custom:
-                                new_icon = "🔧"
-                            elif is_now_favorite:
+                            if is_now_favorite:
                                 new_icon = "★"
+                            elif mat.is_custom:
+                                new_icon = "🔧"
                             else:
                                 new_icon = "☆"
                             

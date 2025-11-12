@@ -67,7 +67,7 @@ coll = COLLECT(
 app = BUNDLE(
     coll,
     name='CO₂-Bilanzierer.app',
-    icon=None,  # Optional: 'icon.icns' hinzufügen
+    icon='data/app_icon.icns',  # Optional: 'icon.icns' hinzufügen
     bundle_identifier='de.abc.co2bilanzierer',
     info_plist={
         'NSPrincipalClass': 'NSApplication',
