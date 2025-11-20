@@ -55,7 +55,7 @@ class VariantView(ctk.CTkFrame):
             no_data_label.pack(pady=50)
             return
 
-        # Header: Varianten-Name
+        # Header: Varianten-Name (fix oben)
         header_frame = ctk.CTkFrame(self)
         header_frame.pack(fill="x", padx=10, pady=(10, 5))
 
@@ -75,26 +75,27 @@ class VariantView(ctk.CTkFrame):
         self.name_entry.bind("<FocusOut>", self._on_name_changed)
         self.name_entry.bind("<Return>", self._on_name_changed)
 
-        # Oberer Bereich: Diagramm (Ausgewogene Höhe)
-        chart_frame = ctk.CTkFrame(self, height=350)
-        chart_frame.pack(fill="x", padx=10, pady=10)
-        chart_frame.pack_propagate(False)
-
-        self._create_chart(chart_frame, variant)
-
-        # Mittlerer Bereich: Tabelle (Theme-bewusst)
-        # fg_color Format: (Light Mode Farbe, Dark Mode Farbe)
-        table_frame = ctk.CTkFrame(self, fg_color=("white", "#2b2b2b"))
-        table_frame.pack(fill="both", expand=True, padx=10, pady=10)
-
-        self._create_table(table_frame, variant)
-
-        # Unterer Bereich: Buttons + Summen
+        # Unterer Bereich: Buttons + Summen (fix unten)
         bottom_frame = ctk.CTkFrame(self)
-        bottom_frame.pack(fill="x", padx=10, pady=10)
+        bottom_frame.pack(side="bottom", fill="x", padx=10, pady=10)
 
         self._create_buttons(bottom_frame, variant)
         self._create_sums(bottom_frame, variant)
+
+        # Mittlerer scrollbarer Bereich: Chart + Tabelle
+        middle_scroll = ctk.CTkScrollableFrame(self)
+        middle_scroll.pack(fill="both", expand=True, padx=10, pady=5)
+
+        # Chart-Container
+        chart_frame = ctk.CTkFrame(middle_scroll)
+        chart_frame.pack(fill="x", pady=(0, 10))
+        self._create_chart(chart_frame, variant)
+
+        # Tabelle
+        table_frame = ctk.CTkFrame(
+            middle_scroll, fg_color=("white", "#2b2b2b"))
+        table_frame.pack(fill="both", expand=True)
+        self._create_table(table_frame, variant)
 
     def _create_chart(self, parent: ctk.CTkFrame, variant) -> None:
         """Erstellt kleines Diagramm für diese Variante"""
@@ -113,7 +114,7 @@ class VariantView(ctk.CTkFrame):
         # Systemgrenze aus Projekt
         project = self.orchestrator.get_current_project()
         boundary = project.system_boundary if project else "A1-A3"
-        
+
         # WICHTIG: Varianten-View setzt IMMER Farben für ihre Materialien
         # Dadurch sind die Farben konsistent, unabhängig von Dashboard-Checkboxen
         # Die Farben werden basierend auf ALLEN Materialien in dieser Variante gesetzt
@@ -222,7 +223,7 @@ class VariantView(ctk.CTkFrame):
                 patch = Rectangle((0, 0), 1, 1, fc=color, edgecolor='white')
                 legend_handles.append(patch)
                 legend_labels.append(material_name)
-            
+
             # Legende rechts neben dem Diagramm - mit voller Breite
             legend = ax.legend(
                 legend_handles,
@@ -290,8 +291,8 @@ class VariantView(ctk.CTkFrame):
         self.tree = ttk.Treeview(
             parent,
             columns=columns,
-            show="headings",
-            height=8  # Kompaktere Tabelle (scrollbar)
+            show="headings"
+            # Keine feste Höhe - Tabelle wächst mit Inhalt
         )
 
         # Style konfigurieren (Theme-bewusst)
@@ -351,39 +352,25 @@ class VariantView(ctk.CTkFrame):
         self.tree.heading("result_acd", text="Ergebnis A+C+D")
 
         # Spaltenbreiten (angepasst für GWP_D)
-        self.tree.column("pos", width=10)        # Kleiner: 50→40
-        self.tree.column("bezeichnung", width=250)
-        self.tree.column("menge", width=60)
-        self.tree.column("einheit", width=30)   # Kleiner: 60→50
-        self.tree.column("gwp_a", width=60)     # Kleiner: 90→75
-        self.tree.column("gwp_c3", width=60)    # Kleiner: 80→70
-        self.tree.column("gwp_c4", width=60)    # Kleiner: 80→70
-        self.tree.column("gwp_d", width=60)
-        self.tree.column("result_a", width=60)
-        self.tree.column("result_ac", width=60)
-        self.tree.column("result_acd", width=60)
+        # Kleiner: 50→40
+        self.tree.column("pos", width=5, anchor="center")
+        self.tree.column("bezeichnung", width=250, anchor="center")
+        self.tree.column("menge", width=60, anchor="center")
+        self.tree.column("einheit", width=20,
+                         anchor="center")   # Kleiner: 60→50
+        # Kleiner: 90→75
+        self.tree.column("gwp_a", width=40, anchor="center")
+        # Kleiner: 80→70
+        self.tree.column("gwp_c3", width=40, anchor="center")
+        # Kleiner: 80→70
+        self.tree.column("gwp_c4", width=40, anchor="center")
+        self.tree.column("gwp_d", width=40, anchor="center")
+        self.tree.column("result_a", width=70, anchor="center")
+        self.tree.column("result_ac", width=70, anchor="center")
+        self.tree.column("result_acd", width=70, anchor="center")
 
-        # Scrollbar (Theme-bewusst)
-        scrollbar = ttk.Scrollbar(
-            parent, orient="vertical", command=self.tree.yview)
-        self.tree.configure(yscrollcommand=scrollbar.set)
-
-        # Scrollbar-Style anpassen
-        if current_mode == "Dark":
-            style.configure("Vertical.TScrollbar",
-                            background="#2b2b2b",
-                            troughcolor="#1f1f1f",
-                            bordercolor="#1f1f1f",
-                            arrowcolor="white")
-        else:
-            style.configure("Vertical.TScrollbar",
-                            background="#e0e0e0",
-                            troughcolor="white",
-                            bordercolor="#d0d0d0",
-                            arrowcolor="black")
-
-        self.tree.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
+        # Keine Scrollbar mehr - äußerer ScrollableFrame übernimmt das Scrolling
+        self.tree.pack(fill="both", expand=True)
 
         # Daten füllen
         self._populate_table(variant)
@@ -401,20 +388,20 @@ class VariantView(ctk.CTkFrame):
         # Zeilen einfügen
         for row in variant.rows:
             # GWP_D und result_acd können None sein, dann "N/A" anzeigen
-            gwp_d_display = f"{row.material_gwp_d:.2f}" if row.material_gwp_d is not None else "N/A"
-            result_acd_display = f"{row.result_acd:.2f}" if row.result_acd is not None else "N/A"
+            gwp_d_display = f"{row.material_gwp_d:.1f}" if row.material_gwp_d is not None else "N/A"
+            result_acd_display = f"{row.result_acd:.1f}" if row.result_acd is not None else "N/A"
 
             values = (
                 row.position + 1,
-                row.material_name[:40] if row.material_name else "Nicht ausgewählt",
+                row.material_name[:50] if row.material_name else "Nicht ausgewählt",
                 f"{row.quantity:.1f}",
                 row.material_unit,
-                f"{row.material_gwp_a1a3:.2f}",  # 2 Nachkommastellen
-                f"{row.material_gwp_c3:.2f}",    # 2 Nachkommastellen
-                f"{row.material_gwp_c4:.2f}",    # 2 Nachkommastellen
+                f"{row.material_gwp_a1a3:.1f}",  # 2 Nachkommastellen
+                f"{row.material_gwp_c3:.1f}",    # 2 Nachkommastellen
+                f"{row.material_gwp_c4:.1f}",    # 2 Nachkommastellen
                 gwp_d_display,                   # GWP_D mit 2 Nachkommastellen oder "N/A"
-                f"{row.result_a:.2f}",
-                f"{row.result_ac:.2f}",
+                f"{row.result_a:.1f}",
+                f"{row.result_ac:.1f}",
                 result_acd_display                # Result ACD mit 2 Nachkommastellen oder "N/A"
             )
 
@@ -467,11 +454,11 @@ class VariantView(ctk.CTkFrame):
 
         sum_frame = ctk.CTkFrame(parent)
         sum_frame.pack(side="right", padx=10, pady=5)
-        
+
         # Prüfe ob biogenic Systemgrenze gewählt ist
         project = self.orchestrator.get_current_project()
         use_biogenic = "(bio)" in project.system_boundary if project else False
-        
+
         # Wähle die richtigen Werte basierend auf Systemgrenze
         if use_biogenic and variant.sum_a_bio is not None:
             # Bio-Werte verwenden
@@ -487,11 +474,11 @@ class VariantView(ctk.CTkFrame):
             sum_acd = variant.sum_acd
             color = None  # Default color
             suffix = ""
-        
+
         # Summe A
         sum_a_label = ctk.CTkLabel(
             sum_frame,
-            text=f"Σ A{suffix}: {sum_a / 1000.0:.2f} t",
+            text=f"Σ A{suffix}: {sum_a / 1000.0:.1f} t",
             font=ctk.CTkFont(size=12, weight="bold"),
             text_color=color
         )
@@ -500,7 +487,7 @@ class VariantView(ctk.CTkFrame):
         # Summe A+C
         sum_ac_label = ctk.CTkLabel(
             sum_frame,
-            text=f"Σ A+C{suffix}: {sum_ac / 1000.0:.2f} t",
+            text=f"Σ A+C{suffix}: {sum_ac / 1000.0:.1f} t",
             font=ctk.CTkFont(size=12, weight="bold"),
             text_color=color
         )
@@ -510,7 +497,7 @@ class VariantView(ctk.CTkFrame):
         if sum_acd is not None:
             sum_acd_label = ctk.CTkLabel(
                 sum_frame,
-                text=f"Σ A+C+D{suffix}: {sum_acd / 1000.0:.2f} t",
+                text=f"Σ A+C+D{suffix}: {sum_acd / 1000.0:.1f} t",
                 font=ctk.CTkFont(size=12, weight="bold"),
                 text_color=color
             )
@@ -554,7 +541,7 @@ class VariantView(ctk.CTkFrame):
             # Wichtig: State NACH dem Hinzufügen der Zeile speichern,
             # damit Zeile-Hinzufügen und Material-Auswahl separate Undo-Schritte sind
             self.orchestrator._save_state_for_undo()
-            
+
             # Material-Picker öffnen
             self._open_material_picker(row.id)
 

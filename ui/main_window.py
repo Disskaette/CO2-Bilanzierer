@@ -657,7 +657,7 @@ class MainWindow(ctk.CTk):
             width=120
         )
         close_btn.pack(pady=(0, 20))
-        
+
         # Fenster auf Inhalt anpassen (nach dem Packen aller Widgets)
         dialog.update_idletasks()
         dialog.minsize(600, 100)
@@ -754,7 +754,6 @@ class MainWindow(ctk.CTk):
 
     def _on_project_loaded(self, project) -> None:
         """Callback: Projekt wurde geladen"""
-        self.logger.info(f"Projekt geladen: {project.name}")
         self._refresh_ui()
 
     def _on_csv_loaded(self, metadata) -> None:
@@ -922,7 +921,6 @@ class MainWindow(ctk.CTk):
         try:
             success = self.orchestrator.perform_undo()
             if success:
-                self.logger.info("✓ Undo durchgeführt")
                 self._update_undo_redo_buttons()
             else:
                 self.logger.debug("Undo nicht möglich (keine History)")
@@ -935,7 +933,6 @@ class MainWindow(ctk.CTk):
         try:
             success = self.orchestrator.perform_redo()
             if success:
-                self.logger.info("✓ Redo durchgeführt")
                 self._update_undo_redo_buttons()
             else:
                 self.logger.debug("Redo nicht möglich (keine Redo-History)")
@@ -962,14 +959,23 @@ class MainWindow(ctk.CTk):
         # Button-States aktualisieren
         self._update_undo_redo_buttons()
 
+        # ProjectTree aktualisieren (wichtig für Varianten-Anzahl)
+        if self.project_tree:
+            self.project_tree.refresh()
+
         # Tabs neu bauen (falls Varianten hinzugefügt/gelöscht wurden)
         self._rebuild_tabs()
 
-        # Aktuelle Ansicht neu laden
+        # Aktuelle Ansicht neu laden mit Sicherheitsprüfung
+        project = self.orchestrator.get_current_project()
         if self.current_tab == 0:
             self._show_dashboard()
-        else:
+        elif project and self.current_tab - 1 < len(project.variants):
+            # Tab existiert: Variante anzeigen
             self._show_variant(self.current_tab - 1)
+        else:
+            # Tab existiert nicht mehr: Fallback auf Dashboard
+            self._switch_tab(0)
 
     # ========================================================================
     # FENSTER SCHLIESSEN

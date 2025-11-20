@@ -88,14 +88,15 @@ class MaterialRepository:
             # Verwende einfach cp1252 (Windows-Standard) - funktioniert für deutsche Umlaute
             # Dies ist schnell und zuverlässig für ÖKOBAUDAT
             used_encoding = 'cp1252'
-            
+
             try:
                 with open(path, 'r', encoding='cp1252') as f:
                     file_content = f.read()
                 self.logger.info(f"CSV-Encoding: {used_encoding}")
             except Exception as e:
                 # Fallback auf UTF-8
-                self.logger.warning(f"cp1252 fehlgeschlagen, verwende UTF-8: {e}")
+                self.logger.warning(
+                    f"cp1252 fehlgeschlagen, verwende UTF-8: {e}")
                 try:
                     with open(path, 'r', encoding='utf-8') as f:
                         file_content = f.read()
@@ -106,53 +107,71 @@ class MaterialRepository:
                         file_content = f.read()
                     used_encoding = 'utf-8 (with errors replaced)'
                 self.logger.info(f"CSV-Encoding: {used_encoding}")
-            
+
             # Parse CSV aus String
             from io import StringIO
-            reader = csv.DictReader(StringIO(file_content), delimiter=separator)
-            
+            reader = csv.DictReader(
+                StringIO(file_content), delimiter=separator)
+
             for idx, row in enumerate(reader):
-                    try:
-                        # UUID als eindeutige ID
-                        uuid = row.get('UUID', f"mat_{idx}")
+                try:
+                    # UUID als eindeutige ID
+                    uuid = row.get('UUID', f"mat_{idx}")
 
-                        # Wenn UUID noch nicht existiert, Basisdaten erstellen
-                        if uuid not in materials_dict:
-                            # Name: Deutsch bevorzugt, sonst Englisch, sonst Fallback
-                            name_de = row.get('Name (de)', '').strip()
-                            name_en = row.get('Name (en)', '').strip()
-                            name = name_de or name_en or f'Material {idx}'
-                            
-                            materials_dict[uuid] = {
-                                'uuid': uuid,
-                                'name': name,
-                                'type': row.get('Typ', 'generisch'),
-                                'source': row.get('Declaration owner', ''),
-                                'conformity': row.get('Konformitaet', '').strip(),
-                                'unit': row.get('Bezugseinheit', 'kg'),
-                                'modules': {}  # Modul -> GWP-Wert
-                            }
+                    # Wenn UUID noch nicht existiert, Basisdaten erstellen
+                    if uuid not in materials_dict:
+                        # Name: Deutsch bevorzugt, sonst Englisch, sonst Fallback
+                        name_de = row.get('Name (de)', '').strip()
+                        name_en = row.get('Name (en)', '').strip()
+                        name = name_de or name_en or f'Material {idx}'
 
-                        # Modul und GWP-Wert extrahieren
-                        # WICHTIG: ÖKOBAUDAT verwendet "GWPtotal (A2)", nicht "GWP"!
-                        modul = row.get('Modul', '').strip()
-                        gwp_str = row.get('GWPtotal (A2)', row.get('GWP', '0'))
+                        # Einheit und Bezugsgröße auslesen
+                        unit = row.get('Bezugseinheit', 'kg')
+                        bezugsgroesse_str = row.get('Bezugsgroesse', '1')
 
-                        if modul and gwp_str:
-                            gwp_value = self._parse_float(gwp_str, decimal)
-                            materials_dict[uuid]['modules'][modul] = gwp_value
-                        
-                        # Biogener Kohlenstoff extrahieren (nur einmal pro Material)
-                        if 'biogenic_carbon' not in materials_dict[uuid]:
-                            bio_str = row.get('Biogenic carbon content (A1-A3)', 
-                                            row.get('biogenic_carbon', None))
-                            if bio_str:
-                                materials_dict[uuid]['biogenic_carbon'] = self._parse_float(bio_str, decimal)
-                            else:
-                                materials_dict[uuid]['biogenic_carbon'] = None
+                        # Bezugsgröße parsen (kann Komma als Dezimaltrennzeichen haben)
+                        try:
+                            bezugsgroesse = self._parse_float(
+                                bezugsgroesse_str, decimal)
+                        except (ValueError, TypeError):
+                            bezugsgroesse = 1.0
 
-                    except Exception as e:
-                        self.logger.warning(f"Fehler in Zeile {idx + 2}: {e}")
+                        # Wenn Bezugsgröße 1000 und Einheit kg ist, konvertiere zu Tonnen
+                        if bezugsgroesse == 1000.0 and unit == 'kg':
+                            unit = 't'
+
+                        materials_dict[uuid] = {
+                            'uuid': uuid,
+                            'name': name,
+                            'type': row.get('Typ', 'generisch'),
+                            'source': row.get('Declaration owner', ''),
+                            'conformity': row.get('Konformitaet', '').strip(),
+                            'unit': unit,
+                            'bezugsgroesse': bezugsgroesse,  # Speichere für spätere Referenz
+                            'modules': {}  # Modul -> GWP-Wert
+                        }
+
+                    # Modul und GWP-Wert extrahieren
+                    # WICHTIG: ÖKOBAUDAT verwendet "GWPtotal (A2)", nicht "GWP"!
+                    modul = row.get('Modul', '').strip()
+                    gwp_str = row.get('GWPtotal (A2)', row.get('GWP', '0'))
+
+                    if modul and gwp_str:
+                        gwp_value = self._parse_float(gwp_str, decimal)
+                        materials_dict[uuid]['modules'][modul] = gwp_value
+
+                    # Biogener Kohlenstoff extrahieren (nur einmal pro Material)
+                    if 'biogenic_carbon' not in materials_dict[uuid]:
+                        bio_str = row.get('Biogenic carbon content (A1-A3)',
+                                          row.get('biogenic_carbon', None))
+                        if bio_str:
+                            materials_dict[uuid]['biogenic_carbon'] = self._parse_float(
+                                bio_str, decimal)
+                        else:
+                            materials_dict[uuid]['biogenic_carbon'] = None
+
+                except Exception as e:
+                    self.logger.warning(f"Fehler in Zeile {idx + 2}: {e}")
 
             # Materialien aus Dict erstellen
             materials = []
@@ -175,11 +194,12 @@ class MaterialRepository:
 
             # Favoriten neu mappen
             self._remap_favorites()
-            
+
             # Custom Materials laden (aus gleichem Verzeichnis)
             custom_count = self.load_custom_materials()
             if custom_count > 0:
-                self.logger.info(f"Zusätzlich {custom_count} Custom Materials geladen")
+                self.logger.info(
+                    f"Zusätzlich {custom_count} Custom Materials geladen")
 
             return True
 
@@ -271,7 +291,8 @@ class MaterialRepository:
             gwp_d=gwp_d,
             biogenic_carbon=biogenic_carbon,
             # Original speichern
-            raw_data={'modules': modules, 'csv_type': csv_type, 'biogenic_carbon': biogenic_carbon, 'conformity': data.get('conformity', '')}
+            raw_data={'modules': modules, 'csv_type': csv_type,
+                      'biogenic_carbon': biogenic_carbon, 'conformity': data.get('conformity', '')}
         )
 
     def _parse_row(
@@ -427,10 +448,10 @@ class MaterialRepository:
     def get_material_by_id(self, material_id: str) -> Optional[Material]:
         """
         Holt Material anhand der ID (UUID)
-        
+
         Args:
             material_id: Material-ID (UUID)
-            
+
         Returns:
             Material oder None wenn nicht gefunden
         """
@@ -438,38 +459,39 @@ class MaterialRepository:
             if material.id == material_id:
                 return material
         return None
-    
+
     def is_favorite(self, material_id: str) -> bool:
         """Prüft ob Material ein Favorit ist"""
         return material_id in self.favorites
-    
+
     def add_favorite(self, material_id: str, material_name: str) -> None:
         """Fügt Material zu Favoriten hinzu"""
         self.favorites.add(material_id)
         self.favorite_names.add(material_name)
-    
+
     def remove_favorite(self, material_id: str) -> None:
         """Entfernt Material aus Favoriten"""
         self.favorites.discard(material_id)
-        
+
         # Auch den Namen entfernen, um Remapping zu verhindern
         for material in self.materials:
             if material.id == material_id:
                 self.favorite_names.discard(material.name)
                 break
-    
+
     def add_to_favorites(self, material_id: str, material_name: str) -> None:
         """Fügt Material zu Favoriten hinzu (Alias für Kompatibilität)"""
         self.add_favorite(material_id, material_name)
-    
+
     def get_recently_used(self, limit: int = 30) -> List[Material]:
         """Gibt die zuletzt/am häufigsten verwendeten Materialien zurück (max. 30)"""
         if not self.usage_counter:
             return []
-        
+
         # Sortiere nach Verwendungshäufigkeit (absteigend)
-        sorted_ids = [mat_id for mat_id, _ in self.usage_counter.most_common(limit)]
-        
+        sorted_ids = [mat_id for mat_id,
+                      _ in self.usage_counter.most_common(limit)]
+
         # Material-Objekte holen
         result = []
         for mat_id in sorted_ids:
@@ -477,13 +499,13 @@ class MaterialRepository:
                 if material.id == mat_id:
                     result.append(material)
                     break
-        
+
         return result
 
     def track_usage(self, material_id: str, material_name: str) -> None:
         """Zählt Verwendung eines Materials (ohne automatische Favoriten-Hinzufügung)"""
         self.usage_counter[material_id] += 1
-        
+
         # Begrenze auf max 30 Einträge (entferne am wenigsten genutzte)
         if len(self.usage_counter) > 30:
             # Finde das am wenigsten genutzte Material
@@ -493,25 +515,27 @@ class MaterialRepository:
     def restore_favorites(self, favorite_ids: List[str], favorite_names: List[str]) -> None:
         """
         Stellt Favoriten aus gespeicherter Konfiguration wieder her
-        
+
         Args:
             favorite_ids: Liste von Material-IDs
             favorite_names: Liste von Material-Namen
         """
         self.favorites = set(favorite_ids)
         self.favorite_names = set(favorite_names)
-        self.logger.info(f"Favoriten wiederhergestellt: {len(self.favorites)} IDs, {len(self.favorite_names)} Namen")
-    
+        self.logger.info(
+            f"Favoriten wiederhergestellt: {len(self.favorites)} IDs, {len(self.favorite_names)} Namen")
+
     def restore_usage_counter(self, usage_data: Dict[str, int]) -> None:
         """
         Stellt Verwendungszähler aus gespeicherter Konfiguration wieder her
-        
+
         Args:
             usage_data: Dictionary mit material_id: count
         """
         self.usage_counter = Counter(usage_data)
-        self.logger.info(f"Verwendungszähler wiederhergestellt: {len(self.usage_counter)} Einträge")
-    
+        self.logger.info(
+            f"Verwendungszähler wiederhergestellt: {len(self.usage_counter)} Einträge")
+
     def _remap_favorites(self) -> None:
         """
         Mappt Favoriten nach CSV-Wechsel neu
@@ -547,11 +571,11 @@ class MaterialRepository:
             'favorites': len(self.favorites),
             'custom_materials': custom_count
         }
-    
+
     # ========================================================================
     # CUSTOM MATERIALS
     # ========================================================================
-    
+
     def get_custom_materials_path(self) -> Path:
         """Gibt Pfad zur custom_materials.csv zurück"""
         if self.csv_path:
@@ -559,30 +583,30 @@ class MaterialRepository:
             return Path(self.csv_path).parent / 'custom_materials.csv'
         # Fallback: data-Ordner im Projektverzeichnis
         return Path(__file__).parent / 'custom_materials.csv'
-    
+
     def load_custom_materials(self) -> int:
         """
         Lädt eigene Materialien aus custom_materials.csv
-        
+
         Returns:
             Anzahl geladener Custom Materials
         """
         custom_path = self.get_custom_materials_path()
-        
+
         if not custom_path.exists():
             self.logger.info(f"Keine Custom Materials gefunden: {custom_path}")
             return 0
-        
+
         try:
             loaded_count = 0
             with open(custom_path, 'r', encoding='utf-8') as f:
                 reader = csv.DictReader(f, delimiter=';')
-                
+
                 for row in reader:
                     # Leere Zeilen überspringen
                     if not row.get('UUID') or not row.get('Name'):
                         continue
-                    
+
                     try:
                         # Custom Materials verwenden Punkt als Dezimalzeichen
                         # Material erstellen
@@ -593,59 +617,65 @@ class MaterialRepository:
                             dataset_type=row['Datensatztyp'],
                             unit=row['Einheit'],
                             gwp_a1a3=self._parse_float(row['GWP_A1-A3'], '.'),
-                            gwp_c3=self._parse_float(row.get('GWP_C3', '0'), '.'),
-                            gwp_c4=self._parse_float(row.get('GWP_C4', '0'), '.'),
-                            gwp_d=self._parse_float(row.get('GWP_D', ''), '.') if row.get('GWP_D') else None,
-                            biogenic_carbon=self._parse_float(row.get('biogenic_carbon', ''), '.') if row.get('biogenic_carbon') else None,
+                            gwp_c3=self._parse_float(
+                                row.get('GWP_C3', '0'), '.'),
+                            gwp_c4=self._parse_float(
+                                row.get('GWP_C4', '0'), '.'),
+                            gwp_d=self._parse_float(
+                                row.get('GWP_D', ''), '.') if row.get('GWP_D') else None,
+                            biogenic_carbon=self._parse_float(
+                                row.get('biogenic_carbon', ''), '.') if row.get('biogenic_carbon') else None,
                             conformity=row.get('conformity', 'Eigene EPD'),
                             is_custom=True
                         )
-                        
+
                         self.materials.append(material)
                         loaded_count += 1
-                        
+
                     except Exception as e:
-                        self.logger.warning(f"Fehler beim Laden von Custom Material: {e}")
+                        self.logger.warning(
+                            f"Fehler beim Laden von Custom Material: {e}")
                         continue
-            
+
             self.logger.info(f"{loaded_count} Custom Materials geladen")
             return loaded_count
-            
+
         except Exception as e:
-            self.logger.error(f"Fehler beim Laden von Custom Materials: {e}", exc_info=True)
+            self.logger.error(
+                f"Fehler beim Laden von Custom Materials: {e}", exc_info=True)
             return 0
-    
+
     def save_custom_material(self, material: Material) -> bool:
         """
         Speichert ein neues Custom Material
-        
+
         Args:
             material: Material-Objekt (mit is_custom=True)
-        
+
         Returns:
             True bei Erfolg
         """
         if not material.is_custom:
             self.logger.error("Nur Custom Materials können gespeichert werden")
             return False
-        
+
         custom_path = self.get_custom_materials_path()
-        
+
         try:
             # Prüfen ob Datei existiert
             file_exists = custom_path.exists()
-            
+
             # Ans Ende anhängen
             with open(custom_path, 'a', encoding='utf-8', newline='') as f:
                 writer = csv.writer(f, delimiter=';')
-                
+
                 # Header schreiben wenn neue Datei
                 if not file_exists or custom_path.stat().st_size == 0:
                     writer.writerow([
                         'UUID', 'Name', 'Quelle', 'Datensatztyp', 'Einheit',
                         'GWP_A1-A3', 'GWP_C3', 'GWP_C4', 'GWP_D', 'biogenic_carbon', 'conformity'
                     ])
-                
+
                 # Material schreiben
                 writer.writerow([
                     material.id,
@@ -660,58 +690,62 @@ class MaterialRepository:
                     f"{material.biogenic_carbon:.6f}" if material.biogenic_carbon is not None else "",
                     material.conformity
                 ])
-            
+
             # Zu materials hinzufügen
             self.materials.append(material)
             self.logger.info(f"Custom Material gespeichert: {material.name}")
             return True
-            
+
         except Exception as e:
-            self.logger.error(f"Fehler beim Speichern von Custom Material: {e}", exc_info=True)
+            self.logger.error(
+                f"Fehler beim Speichern von Custom Material: {e}", exc_info=True)
             return False
-    
+
     def delete_custom_material(self, material_id: str) -> bool:
         """
         Löscht ein Custom Material
-        
+
         Args:
             material_id: UUID des Materials
-        
+
         Returns:
             True bei Erfolg
         """
         # Material finden
-        material = next((m for m in self.materials if m.id == material_id and m.is_custom), None)
+        material = next((m for m in self.materials if m.id ==
+                        material_id and m.is_custom), None)
         if not material:
             self.logger.error(f"Custom Material nicht gefunden: {material_id}")
             return False
-        
+
         custom_path = self.get_custom_materials_path()
-        
+
         try:
             # Alle Materials außer dem zu löschenden einlesen
             remaining_materials = []
-            
+
             with open(custom_path, 'r', encoding='utf-8') as f:
                 reader = csv.DictReader(f, delimiter=';')
                 for row in reader:
                     if row['UUID'] != material_id:
                         remaining_materials.append(row)
-            
+
             # Neu schreiben
             with open(custom_path, 'w', encoding='utf-8', newline='') as f:
                 if remaining_materials:
                     fieldnames = ['UUID', 'Name', 'Quelle', 'Datensatztyp', 'Einheit',
-                                'GWP_A1-A3', 'GWP_C3', 'GWP_C4', 'GWP_D', 'biogenic_carbon', 'conformity']
-                    writer = csv.DictWriter(f, fieldnames=fieldnames, delimiter=';')
+                                  'GWP_A1-A3', 'GWP_C3', 'GWP_C4', 'GWP_D', 'biogenic_carbon', 'conformity']
+                    writer = csv.DictWriter(
+                        f, fieldnames=fieldnames, delimiter=';')
                     writer.writeheader()
                     writer.writerows(remaining_materials)
-            
+
             # Aus materials entfernen
             self.materials = [m for m in self.materials if m.id != material_id]
             self.logger.info(f"Custom Material gelöscht: {material.name}")
             return True
-            
+
         except Exception as e:
-            self.logger.error(f"Fehler beim Löschen von Custom Material: {e}", exc_info=True)
+            self.logger.error(
+                f"Fehler beim Löschen von Custom Material: {e}", exc_info=True)
             return False

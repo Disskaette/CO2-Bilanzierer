@@ -47,7 +47,7 @@ class DashboardView(ctk.CTkFrame):
     def _build_ui(self) -> None:
         """Erstellt UI"""
 
-        # Header mit Projektname
+        # Header mit Projektname (fix oben)
         header_frame = ctk.CTkFrame(self)
         header_frame.pack(fill="x", padx=10, pady=(10, 5))
 
@@ -68,12 +68,13 @@ class DashboardView(ctk.CTkFrame):
             height=40
         )
         self.project_entry.insert(0, project_name)
-        self.project_entry.pack(side="left", fill="x", expand=True, padx=(0, 10), pady=5)
+        self.project_entry.pack(side="left", fill="x",
+                                expand=True, padx=(0, 10), pady=5)
         self.project_entry.bind("<FocusOut>", self._on_project_name_changed)
         self.project_entry.bind("<Return>", self._on_project_name_changed)
         self.project_entry.bind("<KeyRelease>", self._on_project_name_changed)
 
-        # Unterer Bereich: Sichtbarkeits-Checkboxen
+        # Unterer Bereich: Sichtbarkeits-Checkboxen (fix unten)
         vis_frame = ctk.CTkFrame(self)
         vis_frame.pack(side="bottom", fill="x", padx=10, pady=10)
 
@@ -85,11 +86,10 @@ class DashboardView(ctk.CTkFrame):
         )
         vis_label.pack(side="left", padx=10)
 
-        # Dynamische Checkboxen für vorhandene Varianten
         self._create_visibility_checkboxes(vis_frame)
 
-        # Chart-Container (NACH Checkboxen erstellen, damit visibility_vars gesetzt sind)
-        chart_frame = ctk.CTkFrame(self)
+        # Scrollbarer Chart-Container (horizontal & vertikal)
+        chart_frame = ctk.CTkScrollableFrame(self)
         chart_frame.pack(fill="both", expand=True, padx=10, pady=5)
 
         self._create_chart(chart_frame)
@@ -127,16 +127,8 @@ class DashboardView(ctk.CTkFrame):
     def _create_chart(self, parent: ctk.CTkFrame) -> None:
         """Erstellt Matplotlib-Chart mit Tabelle"""
 
-        # Scrollable Container
-        scrollable_frame = ctk.CTkScrollableFrame(parent)
-        scrollable_frame.pack(fill="both", expand=True)
-
-        # Container für Chart und Tabelle
-        chart_container = ctk.CTkFrame(scrollable_frame)
-        chart_container.pack(fill="both", expand=True)
-
-        # Oberer Teil: Diagramm
-        plot_frame = ctk.CTkFrame(chart_container)
+        # Oberer Teil: Diagramm (parent ist bereits scrollable)
+        plot_frame = ctk.CTkFrame(parent)
         plot_frame.pack(fill="both", expand=True, pady=(0, 10))
 
         # Figure erstellen mit Theme
@@ -158,6 +150,7 @@ class DashboardView(ctk.CTkFrame):
         # Formel: Basis + (Anzahl Materialien × Faktor)
         base_height = 4.0  # Basis-Höhe für wenige Materialien
 
+        # DPI verdreifacht (300) und Größe auf 1/3 reduziert für höhere Auflösung
         self.figure = Figure(figsize=(8, base_height),
                              dpi=100, facecolor=fig_color)
         ax = self.figure.add_subplot(111)
@@ -193,7 +186,7 @@ class DashboardView(ctk.CTkFrame):
 
         # Unterer Teil: Material-Tabelle
         if project and project.variants:
-            self._create_material_table(chart_container, project)
+            self._create_material_table(parent, project)
 
     def _plot_comparison(self, ax, project, is_dark: bool = False) -> None:
         """
@@ -210,10 +203,10 @@ class DashboardView(ctk.CTkFrame):
             i for i in range(len(project.variants))
             if i < len(self.visibility_vars) and self.visibility_vars[i].get()
         ]
-        
+
         # 2. Zentrale Farbzuordnung aktualisieren
         self.orchestrator.update_material_colors(visible_indices)
-        
+
         # 3. Alle Materialien über sichtbare Varianten sammeln (für num_materials)
         all_materials = set()
         for i in visible_indices:
@@ -449,7 +442,7 @@ class DashboardView(ctk.CTkFrame):
         title_label = ctk.CTkLabel(
             parent,
             text="Material-Übersicht pro Variante",
-            font=ctk.CTkFont(size=13, weight="bold")
+            font=ctk.CTkFont(size=13, weight="bold"), text_color="white"
         )
         title_label.pack(anchor="w", padx=5, pady=(5, 5))
 
@@ -466,7 +459,10 @@ class DashboardView(ctk.CTkFrame):
         if not visible_variants:
             return
 
-        total_font = ctk.CTkFont(weight="bold")
+        # Font-Konfigurationen für Tabellen
+        header_font = ("Helvetica", 11, "bold")    # Header-Schrift
+        content_font = ("Helvetica", 10)            # Inhalts-Schrift
+        total_font = ("Helvetica", 11, "bold")      # Summen-Schrift
 
         # Gruppe 0: Varianten 0 & 1, Gruppe 1: 2 & 3, ...
         group_count = (len(visible_variants) + 1) // 2
@@ -492,22 +488,26 @@ class DashboardView(ctk.CTkFrame):
                             background="#2b2b2b",
                             fieldbackground="#2b2b2b",
                             foreground="white",
-                            rowheight=20)
+                            rowheight=22,
+                            font=content_font)  # Inhalts-Font
             style.configure("Treeview.Heading",
                             background="#1f1f1f",
                             foreground="white",
-                            relief="flat")
+                            relief="flat",
+                            font=header_font)  # Header-Font
         else:
             style.theme_use('default')
             style.configure("Treeview",
                             background="white",
                             fieldbackground="white",
-                            foreground="black",
-                            rowheight=20)
+                            foreground="white",  # Weiße Schrift für cleanen Look
+                            rowheight=22,
+                            font=content_font)  # Inhalts-Font
             style.configure("Treeview.Heading",
                             background="#d0d0d0",
-                            foreground="black",
-                            relief="flat")
+                            foreground="white",  # Weiße Schrift für Header
+                            relief="flat",
+                            font=header_font)  # Header-Font
 
         # Grid erstellen: 2 Spalten
         for idx, variant in enumerate(visible_variants):
@@ -530,7 +530,7 @@ class DashboardView(ctk.CTkFrame):
             var_title = ctk.CTkLabel(
                 variant_frame,
                 text=variant.name,
-                font=ctk.CTkFont(size=13, weight="bold")
+                font=ctk.CTkFont(size=13, weight="bold"), text_color="white"
             )
             var_title.pack(anchor="w", padx=5, pady=(5, 2))
 
