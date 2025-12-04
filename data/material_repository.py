@@ -7,7 +7,6 @@ import logging
 from pathlib import Path
 from typing import List, Optional, Dict, Any, Set
 from datetime import datetime
-from collections import Counter
 
 from models.material import Material
 
@@ -45,8 +44,8 @@ class MaterialRepository:
         self.favorites: Set[str] = set()
         self.favorite_names: Set[str] = set()
 
-        # Verwendungszähler
-        self.usage_counter: Counter = Counter()
+        # Verwendungszähler (material_id -> timestamp)
+        self.usage_counter: Dict[str, float] = {}
 
         self.logger = logger
 
@@ -125,6 +124,10 @@ class MaterialRepository:
                         name_en = row.get('Name (en)', '').strip()
                         name = name_de or name_en or f'Material {idx}'
 
+                        # Bereinige fehlerhafte Fragezeichen (Encoding-Probleme aus ÖKOBAUDAT)
+                        # z.B. "Nordpan ? Massivholzplatten" → "Nordpan - Massivholzplatten"
+                        name = name.replace(' ? ', ' - ')
+
                         # Einheit und Bezugsgröße auslesen
                         unit = row.get('Bezugseinheit', 'kg')
                         bezugsgroesse_str = row.get('Bezugsgroesse', '1')
@@ -140,11 +143,15 @@ class MaterialRepository:
                         if bezugsgroesse == 1000.0 and unit == 'kg':
                             unit = 't'
 
+                        # Bereinige auch die Quelle
+                        source = row.get('Declaration owner',
+                                         '').replace(' ? ', ' - ')
+
                         materials_dict[uuid] = {
                             'uuid': uuid,
                             'name': name,
                             'type': row.get('Typ', 'generisch'),
-                            'source': row.get('Declaration owner', ''),
+                            'source': source,
                             'conformity': row.get('Konformitaet', '').strip(),
                             'unit': unit,
                             'bezugsgroesse': bezugsgroesse,  # Speichere für spätere Referenz
@@ -484,13 +491,16 @@ class MaterialRepository:
         self.add_favorite(material_id, material_name)
 
     def get_recently_used(self, limit: int = 30) -> List[Material]:
-        """Gibt die zuletzt/am häufigsten verwendeten Materialien zurück (max. 30)"""
+        """Gibt die zuletzt verwendeten Materialien zurück, neueste zuerst (max. 30)"""
         if not self.usage_counter:
             return []
 
-        # Sortiere nach Verwendungshäufigkeit (absteigend)
-        sorted_ids = [mat_id for mat_id,
-                      _ in self.usage_counter.most_common(limit)]
+        # Sortiere nach Zeitstempel (absteigend = neueste zuerst)
+        sorted_ids = sorted(
+            self.usage_counter.keys(),
+            key=lambda mat_id: self.usage_counter[mat_id],
+            reverse=True
+        )[:limit]
 
         # Material-Objekte holen
         result = []
@@ -503,14 +513,16 @@ class MaterialRepository:
         return result
 
     def track_usage(self, material_id: str, material_name: str) -> None:
-        """Zählt Verwendung eines Materials (ohne automatische Favoriten-Hinzufügung)"""
-        self.usage_counter[material_id] += 1
+        """Trackt Verwendung eines Materials mit Zeitstempel"""
+        import time
+        self.usage_counter[material_id] = time.time()
 
-        # Begrenze auf max 30 Einträge (entferne am wenigsten genutzte)
+        # Begrenze auf max 30 Einträge (entferne älteste)
         if len(self.usage_counter) > 30:
-            # Finde das am wenigsten genutzte Material
-            least_used = self.usage_counter.most_common()[-1]
-            del self.usage_counter[least_used[0]]
+            # Finde das älteste Material (kleinster Zeitstempel)
+            oldest_id = min(self.usage_counter.keys(),
+                            key=lambda k: self.usage_counter[k])
+            del self.usage_counter[oldest_id]
 
     def restore_favorites(self, favorite_ids: List[str], favorite_names: List[str]) -> None:
         """
@@ -525,14 +537,36 @@ class MaterialRepository:
         self.logger.info(
             f"Favoriten wiederhergestellt: {len(self.favorites)} IDs, {len(self.favorite_names)} Namen")
 
-    def restore_usage_counter(self, usage_data: Dict[str, int]) -> None:
+    def restore_usage_counter(self, usage_data: Dict[str, any]) -> None:
         """
         Stellt Verwendungszähler aus gespeicherter Konfiguration wieder her
 
         Args:
-            usage_data: Dictionary mit material_id: count
+            usage_data: Dictionary mit material_id: timestamp (float) oder count (int, legacy)
         """
-        self.usage_counter = Counter(usage_data)
+        import time
+        # Konvertiere altes Format (int counts) zu neuem Format (float timestamps)
+        converted_data = {}
+        current_time = time.time()
+
+        for mat_id, value in usage_data.items():
+            if isinstance(value, (int, float)):
+                # Wenn Wert zu klein ist (< Jahr 2000), ist es wahrscheinlich ein count
+                # Konvertiere zu relativem Zeitstempel
+                if value < 946684800:  # 2000-01-01 00:00:00 UTC
+                    # Alte counts: Verteile sie über die letzten 30 Tage
+                    # Höhere counts = neuere Zeitstempel
+                    max_count = max(v for v in usage_data.values()
+                                    if isinstance(v, (int, float)))
+                    # 0 = neueste, 1 = älteste
+                    relative_age = (max_count - value) / max(max_count, 1)
+                    converted_data[mat_id] = current_time - \
+                        (relative_age * 30 * 24 * 3600)
+                else:
+                    # Bereits ein Zeitstempel
+                    converted_data[mat_id] = float(value)
+
+        self.usage_counter = converted_data
         self.logger.info(
             f"Verwendungszähler wiederhergestellt: {len(self.usage_counter)} Einträge")
 
@@ -554,9 +588,13 @@ class MaterialRepository:
             f"Favoriten neu gemappt: {len(self.favorites)} gefunden")
 
     def get_top_favorites(self, limit: int = 20) -> List[Material]:
-        """Gibt die am häufigsten verwendeten Materialien zurück"""
-        top_ids = [mat_id for mat_id,
-                   _ in self.usage_counter.most_common(limit)]
+        """Gibt die zuletzt verwendeten Materialien zurück"""
+        # Sortiere nach Zeitstempel (neueste zuerst)
+        top_ids = sorted(
+            self.usage_counter.keys(),
+            key=lambda mat_id: self.usage_counter[mat_id],
+            reverse=True
+        )[:limit]
         return [m for m in self.materials if m.id in top_ids]
 
     def get_metadata(self) -> Dict[str, Any]:

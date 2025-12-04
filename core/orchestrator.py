@@ -610,6 +610,8 @@ class AppOrchestrator:
         if material:
             self.calc_service.update_material_row(row, material, quantity)
             self.material_repo.track_usage(material.id, material.name)
+            # Speichere Config sofort um "Zuletzt benutzt" zu persistieren
+            self.save_config()
         elif quantity is not None:
             row.quantity = quantity
             self.calc_service.recalculate_row(row)
@@ -832,8 +834,13 @@ class AppOrchestrator:
 
     def save_config(self) -> None:
         """Speichert aktuelle Konfiguration inkl. Favoriten und Usage Counter"""
-        # Speichere nur die Top 30 häufigsten Materialien
-        usage_dict = dict(self.material_repo.usage_counter.most_common(30))
+        # Speichere nur die Top 30 zuletzt verwendeten Materialien (nach Zeitstempel sortiert)
+        sorted_usage = sorted(
+            self.material_repo.usage_counter.items(),
+            key=lambda x: x[1],
+            reverse=True
+        )[:30]
+        usage_dict = dict(sorted_usage)
 
         # Lade bestehende config um recent_projects, external_paths und last_open_directory zu erhalten
         existing_config = self.load_config()
